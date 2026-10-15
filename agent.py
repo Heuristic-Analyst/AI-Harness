@@ -177,7 +177,8 @@ class Agent:
             thread.join()
         for call in reply.tool_calls:                             # then hand the results back, in the order the model asked
             args, result = results[call.id]
-            if PRINT_TOOLS or self.log:
+            talk = call.function.name in ("delegate", "tell")    # a message to a subagent and its report: their conversation, not yours
+            if self.log or (PRINT_TOOLS and (PRINT_SUBAGENT_TALK or not talk)):   # transcripts always get everything
                 self.say("\nTOOL:\n" + call.function.name + "(" + str(args) + ") -> " + result)
             self.messages.append({"role": "tool", "tool_call_id": call.id, "name": call.function.name, "content": result})
 

@@ -17,6 +17,8 @@ EFFORT = "high"                        # thinking depth. low / medium / high eve
 # What you see in the terminal (subagent transcripts always contain everything)
 PRINT_THINKING = False                  # False = hide the THINKING blocks, show only answers
 PRINT_TOOLS = True                     # False = hide the TOOL blocks (which tool was called, with what, and the result)
+PRINT_SUBAGENT_TALK = False            # False = hide what the agent and its subagents say to each other (the delegate and tell calls).
+                                       # the [started] / [reported DONE] lines stay, and the transcripts in Conversations/agents/ have it all
 
 # Conversation size
 CONTEXT_LIMIT = 100_000                # conversation bigger than this (in tokens)? summarize the old tasks. keep it below the model's real limit
