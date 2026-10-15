@@ -24,7 +24,7 @@ The whole thing is about a thousand lines of commented Python. It's meant to be 
 ## Quick start
 
 ```bash
-git clone https://github.com/Heuristic-Analyst/AI-Harness/agent.git
+git clone https://github.com/<you>/agent.git
 cd agent
 pip install -r requirements.txt
 ```
@@ -121,6 +121,7 @@ Everything lives in `config.py`. The settings you're most likely to change:
 | `EFFORT` | `high` | Reasoning effort (`low`/`medium`/`high`; DeepSeek uses `low`/`high`/`max`). |
 | `PRINT_THINKING` | `False` | Show the model's thinking in the terminal. |
 | `PRINT_TOOLS` | `True` | Show tool calls and their results in the terminal. |
+| `PRINT_SUBAGENT_TALK` | `False` | Show the messages between the agent and its subagents (`delegate` and `tell`) in the terminal. They're always in the transcripts. |
 | `CONTEXT_LIMIT` | `100_000` | Token count at which old tasks are summarized. |
 | `KEEP_TASKS` | `2` | How many recent tasks stay word for word after summarizing. |
 | `MAX_TOOL_RESULT` | `20_000` | Longest tool result (characters) sent back to the model. |
