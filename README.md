@@ -24,7 +24,7 @@ The whole thing is about a thousand lines of commented Python. It's meant to be 
 ## Quick start
 
 ```bash
-git clone https://github.com/<you>/agent.git
+git clone https://github.com/Heuristic-Analyst/AI-Harness/agent.git
 cd agent
 pip install -r requirements.txt
 ```
