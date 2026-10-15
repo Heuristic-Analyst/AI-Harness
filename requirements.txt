@@ -1,0 +1,1 @@
+litellm==1.105.1    # newest stable. 1.106 rc / 1.107 dev need the extra "mcp" package because of a litellm bug
