@@ -160,7 +160,7 @@ def status(name=None):
                  "image: " + ("built or saved " + built if built else "not built yet, it is built on the first start")]
         if name == now:
             lines.append("state: " + running_info(name))
-            lines.append("limits: " + SANDBOX_MEMORY + " memory, " + SANDBOX_CPUS + " cpus, " + str(TOOL_TIMEOUT) + " s per command")
+            lines.append("limits: " + SANDBOX_MEMORY + " memory, " + SANDBOX_CPUS + " cpus, " + str(MAX_TOOL_TIMEOUT) + " s per command")
             lines.append("shared folder: Shared/ (inside: /workspace). sandbox_shell works")
         elif now:
             lines.append("state: stopped. another sandbox runs: " + now + " (only one can run at a time)")
@@ -179,14 +179,14 @@ def status(name=None):
 
 
 # --- using the running sandbox ---
-def exec(command, timeout=TOOL_TIMEOUT):
+def exec(command, timeout=MAX_TOOL_TIMEOUT):
     """run a shell command inside the running sandbox and return what it printed. this is the agent's only way in"""
     name = running()
     if not name:
         return "no sandbox is running. open one with the open_sandbox tool, or ask the user to run /sandbox run <name>"
     try:
         code, out = podman("exec", "-w", "/workspace", container(name),
-                           "timeout", str(timeout), "bash", "-c", command, timeout=timeout + 10)   # timeout inside AND outside the container
+                           "timeout", "-k", "5", str(timeout), "bash", "-c", command, timeout=timeout + 10)   # timeout inside AND outside the container. -k 5 = hard kill 5 s after the polite stop
     except subprocess.TimeoutExpired:
         return "error: no result after " + str(timeout) + " seconds, command stopped"
     if code == 124:

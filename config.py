@@ -25,9 +25,6 @@ CONTEXT_LIMIT = 100_000                # conversation bigger than this (in token
 KEEP_TASKS = 2                         # this many recent tasks stay word for word when summarizing. 1 or more (one task is everything in between one user input to the next user input)
 MAX_TOOL_RESULT = 20_000               # longest tool result (in characters) that goes back to the model. the rest is cut off
 
-# Tools
-CALC_TIMEOUT = 5                       # seconds a calculation may take. longer (e.g. 9**9**9**9)? stopped and reported as too big
-
 # Subagents
 MAX_CHILDREN = 5                       # subagents one agent may have alive at the same time
 MAX_DEPTH = 3                          # you talk to depth 1. it may create depth 2, which may create depth 3, which may not create any
@@ -39,8 +36,7 @@ CONTAINER_CMD = "podman"               # the container program. podman is rootle
 BASE_IMAGE = "docker.io/library/ubuntu:24.04"   # what a new sandbox is made from: plain ubuntu, nothing installed
 SANDBOX_MEMORY = "2g"                  # limits for a running sandbox, so a runaway script can't take your machine down
 SANDBOX_CPUS = "2"
-TOOL_TIMEOUT = 120                     # seconds a sandbox command may take before it is stopped
-MAX_TOOL_TIMEOUT = 600                 # the most seconds an agent may ask for, when it gives a command its own timeout
+MAX_TOOL_TIMEOUT = 600                 # seconds a sandbox command may run before it is stopped. the same for every command
 
 # Folders and files. want to rename something? change it here, nowhere else
 ENV_FILE = os.path.join(HERE, ".env")

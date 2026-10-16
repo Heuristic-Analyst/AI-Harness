@@ -129,7 +129,7 @@ Everything lives in `config.py`. The settings you're most likely to change:
 | `MAX_DEPTH` | `3` | How deep the agent tree may go. You talk to depth 1. |
 | `BASE_IMAGE` | `ubuntu:24.04` | Image for new sandboxes. |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `2g` / `2` | Resource limits for a running sandbox. |
-| `TOOL_TIMEOUT` / `MAX_TOOL_TIMEOUT` | `120` / `600` | Default and maximum seconds per sandbox command. |
+| `MAX_TOOL_TIMEOUT` | `600` | Seconds a sandbox command may run before it is stopped. |
 
 The API key is read from `.env` only. It never touches your environment variables.
 
