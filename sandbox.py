@@ -6,6 +6,7 @@
 # everything in here is podman commands; `podman(...)` below runs one and returns what it printed.
 
 import os
+import re
 import shutil
 import subprocess
 from config import *
@@ -57,9 +58,15 @@ def build(name):
         return False
     return done.returncode == 0
 
+INVALID_NAME = "invalid name: lowercase letters, digits and hyphens only, e.g. my-box-2"
+
+def valid_name(name):
+    """what podman accepts in an image name: lowercase letters and digits, hyphens only in between"""
+    return re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", name) is not None
+
 def new(name, base=BASE_IMAGE):
-    if not name.replace("-", "").isalnum():
-        return "invalid name: letters, digits and hyphens only"
+    if not valid_name(name):
+        return INVALID_NAME
     if name in names():
         return "'" + name + "' exists already"
     write_text(os.path.join(SANDBOXES_DIR, name, "Containerfile"), "FROM " + base)   # that's the whole definition: one line
@@ -112,6 +119,40 @@ def reset(name):
         return "no sandbox called '" + name + "'"
     podman("rmi", "-f", image(name))                              # throw the saved state away...
     return "reset " + name + ": brand new" if build(name) else "reset failed"   # ...and build it again from the Containerfile
+
+def copy(name, new_name):
+    """a second sandbox with the same Containerfile and the same saved state. after that, the two are independent"""
+    if name not in names():
+        return "no sandbox called '" + name + "'"
+    if not valid_name(new_name):
+        return INVALID_NAME
+    if new_name in names():
+        return "'" + new_name + "' exists already"
+    if has_image(name):                                           # a saved state? the new name gets the same image. nothing is copied on disk:
+        code, out = podman("tag", image(name), image(new_name))   # they share it until one of them is saved, then each has its own
+        if code != 0:
+            return "copy failed: " + out
+    shutil.copytree(os.path.join(SANDBOXES_DIR, name), os.path.join(SANDBOXES_DIR, new_name))   # the folder: Containerfile and all
+    if name == running():                                         # the copy is made from the image, not from the running container
+        return "copied " + name + " -> " + new_name + " from its last save. changes since then are not in the copy (/sandbox save first to include them)"
+    return "copied " + name + " -> " + new_name
+
+def rename(name, new_name):
+    if name == running():
+        return "stop it first"
+    if name not in names():
+        return "no sandbox called '" + name + "'"
+    if not valid_name(new_name):
+        return INVALID_NAME
+    if new_name in names():
+        return "'" + new_name + "' exists already"
+    if has_image(name):                                           # the saved state moves along: new name on first, then the old name off
+        code, out = podman("tag", image(name), image(new_name))
+        if code != 0:
+            return "rename failed: " + out
+        podman("untag", image(new_name), image(name))             # removes only the old name. the image stays, under its new name
+    os.rename(os.path.join(SANDBOXES_DIR, name), os.path.join(SANDBOXES_DIR, new_name))
+    return "renamed " + name + " -> " + new_name
 
 def set_network(on):
     """internet for the running sandbox, switched live. returns True if the state is now as asked"""
@@ -273,10 +314,12 @@ HELP = """/sandbox list                 all sandboxes, which one runs, which hav
 /sandbox save                 make the running state the sandbox's new image
 /sandbox remove <name>        delete a sandbox: its folder and its image
 /sandbox reset <name>         forget the saved state, rebuild it brand new from its Containerfile
+/sandbox copy <name> <new>    a second sandbox with the same Containerfile and saved state
+/sandbox rename <old> <new>   rename a sandbox, its saved state included (it must be stopped)
 /sandbox net on|off           internet for the running sandbox (default off)
 /sandbox shell                a root shell inside the running one, for you. type exit to come back"""
 
-SUBCOMMANDS = ["list", "check", "new","run", "stop", "save", "remove", "reset", "net", "shell"]
+SUBCOMMANDS = ["list", "check", "new", "run", "stop", "save", "remove", "reset", "copy", "rename", "net", "shell"]
 
 def command(words):
     """words = what you typed after /sandbox, split into a list"""
@@ -306,6 +349,10 @@ def command(words):
         print(remove(words[1]))
     elif what == "reset" and len(words) == 2:
         print(reset(words[1]))
+    elif what == "copy" and len(words) == 3:
+        print(copy(words[1], words[2]))
+    elif what == "rename" and len(words) == 3:
+        print(rename(words[1], words[2]))
     elif what == "net" and len(words) == 2 and words[1] in ("on", "off"):
         ok = set_network(words[1] == "on")
         print("network " + words[1] if ok else "could not switch the network (is a sandbox running?)")
