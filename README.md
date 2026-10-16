@@ -81,6 +81,8 @@ Anything that doesn't start with `/` is a message to the agent.
 | `/sandbox save` | Make the running state the sandbox's new image. |
 | `/sandbox remove <name>` | Delete a sandbox: its folder and its image. |
 | `/sandbox reset <name>` | Forget the saved state and rebuild from the Containerfile. |
+| `/sandbox copy <name> <new>` | Make a second sandbox with the same Containerfile and saved state. The two are independent afterwards. |
+| `/sandbox rename <old> <new>` | Rename a sandbox, saved state included. It has to be stopped. |
 | `/sandbox net on\|off` | Switch internet for the running sandbox (off by default). |
 | `/sandbox shell` | A root shell inside the running sandbox, for you. |
 
