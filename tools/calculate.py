@@ -3,16 +3,17 @@
 
 import sys
 import subprocess
-from config import CALC_TIMEOUT
+
+TIMEOUT = 5   # seconds. a safety net for large calculations like 9**9**9**9, not a setting
 
 def run(agent, expression):
     if not set(expression) <= set("0123456789+-*/().% "):        # only digits and math symbols. never let a model run code.
         return "invalid expression"
     try:                                                          # in its own small python process: one that never ends can be killed
         done = subprocess.run([sys.executable, "-I", "-c", "print(eval(input()))"], input=expression + "\n",
-                              capture_output=True, text=True, timeout=CALC_TIMEOUT)
+                              capture_output=True, text=True, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:                             # e.g. 9**9**9**9: the process is stopped
-        return "too big: no result after " + str(CALC_TIMEOUT) + " seconds"
+        return "too big: no result after " + str(TIMEOUT) + " seconds"
     if done.returncode != 0:                                      # e.g. 1/0 -> "error: ZeroDivisionError: division by zero"
         lines = done.stderr.strip().splitlines()
         return "error: " + (lines[-1] if lines else "exit code " + str(done.returncode))
