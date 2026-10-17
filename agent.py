@@ -5,7 +5,7 @@
 import os
 import json
 import logging
-import importlib
+import importlib.util
 import threading
 import litellm
 from config import *
@@ -15,15 +15,27 @@ litellm.drop_params = True             # if a model can't do something (e.g. thi
 litellm.suppress_debug_info = True     # no "Provider List" hints when litellm's bookkeeping can't identify a model
 
 
-# Tools: one file per tool in the tool's folder. each file has TOOL (what the model sees) and run (what we execute)
+# Tools: one file per tool, anywhere in the tools folder, also in subfolders (tools/notebook/nb_add.py).
+# each file has TOOL (what the model sees) and run (what we execute). folders are only for you: the model sees the name in TOOL
 TOOLS = {}                                                        # tool name -> description, in the format the model wants
 FUNCTIONS = {}                                                    # tool name -> the python function to run
-for file in sorted(os.listdir(TOOLS_DIR)):
-    if file.endswith(".py"):
-        module = importlib.import_module("tools." + file[:-3])    # like `import tools.calculate`, but with the name as a string
+FOUND_IN = {}                                                     # tool name -> its file, to report two tools with one name
+for folder, subfolders, files in os.walk(TOOLS_DIR):              # the tools folder, then every folder inside it, all the way down
+    subfolders[:] = sorted(s for s in subfolders if not s.startswith((".", "_")))   # skip __pycache__, .git and _drafts
+    for file in sorted(files):
+        if not file.endswith(".py") or file.startswith("_"):      # _helpers.py, __init__.py: not a tool
+            continue
+        path = os.path.join(folder, file)
+        where = os.path.relpath(path, HERE)                       # e.g. tools/notebook/nb_add.py
+        spec = importlib.util.spec_from_file_location(where[:-3].replace(os.sep, "."), path)   # load the file by its path
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
         name = module.TOOL["name"]
+        if name in TOOLS:
+            raise SystemExit("two tools are called '" + name + "': " + FOUND_IN[name] + " and " + where + ". rename one")
         TOOLS[name] = {"type": "function", "function": module.TOOL}
         FUNCTIONS[name] = module.run
+        FOUND_IN[name] = where
 
 
 SUBAGENT_RULES = """

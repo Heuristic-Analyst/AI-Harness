@@ -107,7 +107,7 @@ Anything that doesn't start with `/` is a message to the agent.
 ├── Templates/
 │   ├── coder.md         # ready-made subagents: instructions, tools, skills
 │   └── worker.md
-├── tools/               # one file per tool
+├── tools/               # one file per tool. subfolders are fine: tools/notebook/nb_add.py
 ├── Sandboxes/
 │   ├── ubuntu/Containerfile   # one folder per sandbox
 │   └── python/Containerfile   # python + numpy, pandas, matplotlib: for notebooks
@@ -213,6 +213,8 @@ Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT
 ### Add a tool
 
 Create `tools/<name>.py` with a `run` function and a `TOOL` description. `run` always receives the calling agent first, then the arguments the model passed. Tools are loaded at startup.
+
+You can sort tools into folders, as deep as you like (`tools/sandbox/notebook/nb_add.py`). The folders are only for you: the model sees the `name` in `TOOL`, and templates list tools by that name, so moving a file never breaks anything. Files and folders starting with `_` are skipped (`_helpers.py`, `_drafts/`), and two tools with the same name stop the program at startup with a message saying which files.
 
 ```python
 # tools/word_count.py
