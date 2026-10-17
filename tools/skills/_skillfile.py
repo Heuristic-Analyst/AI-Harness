@@ -24,6 +24,13 @@ def path_of(name):
         raise PermissionError("that path is outside Skills/Learned")
     return path
 
+def file_of(name):
+    """the real file of an existing learned skill (its folder may have another name than its header): checked to be inside"""
+    path = SKILLS[name]["path"]
+    if not os.path.realpath(path).startswith(os.path.realpath(LEARNED_SKILLS_DIR) + os.sep):
+        raise PermissionError("that skill's file is outside Skills/Learned")
+    return path
+
 def editable_names():
     return ", ".join(s for s in SKILLS if SKILLS[s]["editable"]) or "none yet"
 
@@ -48,15 +55,17 @@ def header_value(text):
 def clean_body(body):
     """the agent may pass back the whole text it got from load_skill. keep only its own part: no header, no mark"""
     body = str(body).strip()
-    if body.startswith("---"):                             # a header block: drop it, these tools write their own
-        parts = body.split("\n---", 1)
-        body = parts[1].strip() if len(parts) == 2 else body
+    if body.startswith("---"):                             # a header block (with a name: line): drop it, the tools write their own.
+        parts = body.split("\n---", 1)                     # a plain --- divider line at the top is left alone
+        if len(parts) == 2 and "\nname:" in "\n" + parts[0]:
+            body = parts[1].strip()
     if body.startswith("> Editable:"):
         body = body.split("\n", 1)[1].strip() if "\n" in body else ""
     return body
 
-def write(agent, name, description, body):
-    """write the skill file: header (with editable: yes), the mark, the body. then the agent's menu is updated right away"""
+def write(agent, name, description, body, path=None):
+    """write the skill file: header (with editable: yes), the mark, the body. then the agent's menu is updated right away.
+    path: the existing file when editing; a new skill gets Skills/Learned/<name>/SKILL.md"""
     body = clean_body(body)
     description = " ".join(str(description or "").split())
     if not description:
@@ -67,7 +76,7 @@ def write(agent, name, description, body):
         return "too long (" + str(len(body)) + " characters, at most " + str(MAX_BODY) + "). a skill should be short: cut it down"
     text = ("---\nname: " + name + "\ndescription: " + header_value(description) + "\neditable: yes\n"
             "updated: " + datetime.date.today().isoformat() + "\n---\n\n" + MARK + "\n\n" + body)
-    write_text(path_of(name), text)
+    write_text(path or path_of(name), text)
     load_skills()                                          # the menu, read again from the folders
     agent.refresh_system()                                 # and the agent's system prompt with it: usable at once with load_skill
     return None

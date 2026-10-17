@@ -5,7 +5,8 @@ def run(agent, name, body, description=None):
     problem = _skillfile.may_change(name)
     if problem:
         return problem
-    problem = _skillfile.write(agent, name, description or SKILLS[name]["description"], body)   # no description: keep the old one
+    problem = _skillfile.write(agent, name, description or SKILLS[name]["description"], body,   # no description: keep the old one
+                               path=_skillfile.file_of(name))                                    # its real file, wherever it is
     if problem:
         return problem
     return "updated skill '" + name + "'"

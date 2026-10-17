@@ -6,7 +6,7 @@ def run(agent, name):
     problem = _skillfile.may_change(name)
     if problem:
         return problem
-    path = _skillfile.path_of(name)
+    path = _skillfile.file_of(name)                           # its real file, wherever it is in Skills/Learned
     os.remove(path)
     folder = os.path.dirname(path)
     if not os.listdir(folder):                                # only the empty folder goes. anything else in it stays
