@@ -27,9 +27,21 @@ A notebook is a .ipynb file in the shared folder, made of cells. While it is ope
 6. When you are done: nb_rerun, so you know the notebook works from top to bottom. Fix what fails, rerun again, update the first cell, then nb_close.
 7. Tell the user where the notebook is: Shared/ plus its path, e.g. Shared/analysis/sales.ipynb.
 
+## What you get back
+
+- nb_add, nb_edit, nb_run: the output of the cells this call ran (nothing, if it ran none), then the overview.
+- nb_remove: a short confirmation, then the overview.
+- nb_rerun: the output of every code cell, then the overview.
+- nb_open and nb_show: everything. Every cell with its full code and its output.
+- You never get the full code or the outputs of the other cells unless you call nb_show (or nb_open).
+- Each output is cut after 4000 characters; the rest is only in the file. Print summaries (shape, head, totals), not whole tables.
+- Plots come back as a note that there is a figure, not as the picture. They are saved in the notebook.
+
+nb_edit replaces the whole code of a cell. The overview shows only its first line, so before you edit a cell whose full code you have not seen in this conversation (the user added it, or you saw it long ago), call nb_show first.
+
 ## Reading the overview
 
-Every answer ends with a list of all cells: id, state, first line. Always read it. Use the ids from it; they stay the same when cells move.
+Every answer ends with a list of all cells, one line each: number, id, state, and the first line of its code (cut after 60 characters, only so you can tell the cells apart). Always read it. Use the ids from it; they stay the same when cells move.
 
 - ran [n]: ran in this kernel, n is the order of the runs. Fine.
 - not run: never ran. Its variables don't exist yet.
@@ -43,8 +55,6 @@ A note "the notebook file was changed outside" means the user edited it. Read th
 ## Good to know
 
 - Calls for the same notebook in one reply may run in any order. When order matters, make one call per reply, or give nb_run several cell ids: they run in that order.
-- Only a short part of a long output comes back to you. Print summaries (shape, head, totals), not whole tables.
-- Plots are saved into the notebook by themselves. You get a note that there is a figure, not the picture.
 - The kernel's working folder is the notebook's folder: relative paths start there. The shared folder is /workspace.
 - input() does not work: there is no one to type.
 - A cell that runs too long is stopped and the variables are kept. Split long work into smaller cells. For jobs that run for a long time, write a script and start it in the background with sandbox_shell.
