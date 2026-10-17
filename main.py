@@ -103,7 +103,7 @@ if __name__ == "__main__":                                        # runs only wh
 
     try:
         while True:                                               # chat forever, until /exit or ctrl+c
-            text = input("\n> ").strip()
+            text = input("\n>>> ").strip()
             if text == "":
                 continue
             words = text.split()
