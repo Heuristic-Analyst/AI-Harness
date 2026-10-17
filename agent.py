@@ -178,21 +178,29 @@ class Agent:
             result = result[:MAX_TOOL_RESULT] + "\n...(cut off, result was too long)"
         results[call.id] = (args, result)
 
+    def shows(self, call):
+        """should this tool call appear? transcripts get everything; your terminal follows the PRINT_ settings"""
+        talk = call.function.name in ("delegate",
+                                      "tell")  # a message to a subagent and its report: their conversation, not yours
+        return self.log or (PRINT_TOOLS and (PRINT_SUBAGENT_TALK or not talk)) # transcripts always get everything
+
     def run_tools(self, reply):
-        results = {}                                              # tool call id -> (arguments, result)
+        results = {}  # tool call id -> (arguments, result)
         threads = []
-        for call in reply.tool_calls:                             # start one thread per call...
+        for call in reply.tool_calls:  # start one thread per call...
+            if self.shows(call):  # ...and show what is starting, before it runs
+                self.say("\nTOOL CALL:\n" + call.function.name + "(" + (call.function.arguments or "") + ")")
             thread = threading.Thread(target=self.run_tool, args=(call, results))
             thread.start()
             threads.append(thread)
-        for thread in threads:                                    # ...and wait until all of them are done
+        for thread in threads:  # wait until all of them are done
             thread.join()
-        for call in reply.tool_calls:                             # then hand the results back, in the order the model asked
+        for call in reply.tool_calls:  # then hand the results back, in the order the model asked
             args, result = results[call.id]
-            talk = call.function.name in ("delegate", "tell")    # a message to a subagent and its report: their conversation, not yours
-            if self.log or (PRINT_TOOLS and (PRINT_SUBAGENT_TALK or not talk)):   # transcripts always get everything
-                self.say("\nTOOL:\n" + call.function.name + "(" + str(args) + ") -> " + result)
-            self.messages.append({"role": "tool", "tool_call_id": call.id, "name": call.function.name, "content": result})
+            if self.shows(call):
+                self.say("\nTOOL RESULT:\n" + call.function.name + " -> " + result)
+            self.messages.append(
+                {"role": "tool", "tool_call_id": call.id, "name": call.function.name, "content": result})
 
     # --- the agent loop ---
     def ask(self, text):
