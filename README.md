@@ -13,7 +13,6 @@ The whole thing is about a thousand lines of commented Python. It's meant to be 
 - **Memory.** A plain `MEMORY.md` file that the agent reads at the start of every conversation and edits itself.
 - **Persistent conversations.** Every conversation is saved as JSON and can be listed, reopened and renamed.
 - **Automatic compaction.** When a conversation grows past a token limit, older tasks are summarized and the most recent ones are kept word for word.
-- **Jupyter notebooks.** The agent adds, edits, runs and deletes cells in real `.ipynb` files. Variables stay alive between runs, like in Jupyter, and every change lands in the file right away, so you can open it.
 - **Two modes.** In `ask` mode the agent may ask you questions. In `auto` mode it makes reasonable assumptions and decides on its own.
 
 ## Requirements
@@ -94,8 +93,6 @@ Anything that doesn't start with `/` is a message to the agent.
 ├── main.py              # start here: the chat loop and the /commands
 ├── agent.py             # the Agent class: model calls, tool loop, subagents, compaction
 ├── sandbox.py           # Podman sandboxes: build, run, stop, save, exec
-├── notebook.py          # the notebook tools' way into the sandbox
-├── notebook_kernel.py   # runs inside the sandbox: the notebook kernel (variables + cells + .ipynb file)
 ├── config.py            # all settings and paths, plus small shared helpers
 ├── requirements.txt
 ├── .env                 # your API keys (create it yourself, don't commit it)
@@ -107,10 +104,10 @@ Anything that doesn't start with `/` is a message to the agent.
 ├── Templates/
 │   ├── coder.md         # ready-made subagents: instructions, tools, skills
 │   └── worker.md
-├── tools/               # one file per tool. subfolders are fine: tools/notebook/nb_add.py
+├── tools/               # one file per tool. subfolders are fine: tools/sandbox/sandbox_shell.py
 ├── Sandboxes/
 │   ├── ubuntu/Containerfile   # one folder per sandbox
-│   └── python/Containerfile   # python + numpy, pandas, matplotlib: for notebooks
+│   └── python/Containerfile   # python + numpy, pandas, matplotlib
 ├── Shared/              # the only folder a sandbox can see (/workspace inside)
 └── Conversations/       # saved conversations (.json), created on first use
     └── agents/          # subagent transcripts (.md)
@@ -174,17 +171,6 @@ The agent can open a sandbox, but you always pick which one. The agent can stop 
 
 `Ego/MEMORY.md` is included in the main agent's system prompt. When you ask it to remember or forget something, it loads the `memory` skill, reads the file, and writes back the whole updated file.
 
-### Notebooks
-
-The `nb_*` tools give the agent Jupyter-style notebooks. Each notebook in `Shared/` gets its own **kernel**: a small Python program (`notebook_kernel.py`) that is started inside the sandbox on first use and then keeps running, so the variables one cell creates are still there for the next. Every tool call is a short command that hands one request to that kernel and prints its answer.
-
-- every cell has a short id (e.g. `3f9a1c0b`) that stays the same when cells are added or removed
-- every answer ends with an overview of all cells and their state (`ran [3]`, `not run`, `EDITED since, output is stale`, `error`), so the agent always knows where it is
-- the `.ipynb` file is rewritten after every change, outputs and plots included. Open it in Jupyter or VS Code to follow along
-- if you change the file yourself, the kernel notices on the next command and reads it again
-- a cell that runs too long is interrupted; the variables are kept. `nb_restart` throws them all away
-- it needs `python3` in the sandbox: use the `python` sandbox (`/sandbox run python`), or add python to yours. The kernel itself uses only the standard library
-
 ### Compaction
 
 Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT`, everything except the last `KEEP_TASKS` tasks is summarized by a separate request, and the summary moves into the system prompt.
@@ -201,10 +187,6 @@ Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT
 | `check_sandbox` | main only | Shows sandbox state without changing anything. |
 | `open_sandbox` | main only | Asks you which sandbox to start. |
 | `close_sandbox` | main only | Stops the running sandbox. |
-| `nb_add` / `nb_edit` / `nb_delete` | main (subagents if given) | Add, change or remove a notebook cell, optionally running it right away. |
-| `nb_run` | main (subagents if given) | Runs one cell (or `all`) and returns its output. |
-| `nb_show` | main (subagents if given) | The whole notebook: every cell with source and output. |
-| `nb_restart` | main (subagents if given) | A fresh kernel for a notebook: all variables gone, cells kept. |
 | `read_memory` | main only | Reads `MEMORY.md`. |
 | `write_memory` | main only | Replaces `MEMORY.md`. |
 
@@ -214,7 +196,7 @@ Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT
 
 Create `tools/<name>.py` with a `run` function and a `TOOL` description. `run` always receives the calling agent first, then the arguments the model passed. Tools are loaded at startup.
 
-You can sort tools into folders, as deep as you like (`tools/sandbox/notebook/nb_add.py`). The folders are only for you: the model sees the `name` in `TOOL`, and templates list tools by that name, so moving a file never breaks anything. Files and folders starting with `_` are skipped (`_helpers.py`, `_drafts/`), and two tools with the same name stop the program at startup with a message saying which files.
+You can sort tools into folders, as deep as you like (`tools/sandbox/sandbox_shell.py`). The folders are only for you: the model sees the `name` in `TOOL`, and templates list tools by that name, so moving a file never breaks anything. Files and folders starting with `_` are skipped (`_helpers.py`, `_drafts/`), and two tools with the same name stop the program at startup with a message saying which files.
 
 ```python
 # tools/word_count.py
