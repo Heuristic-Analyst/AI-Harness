@@ -9,7 +9,7 @@ The whole thing is under two thousand lines of commented Python. It's meant to b
 - **Any model.** One line in `config.py` picks the model: DeepSeek, Anthropic, OpenAI, a local Ollama model, or anything else LiteLLM supports.
 - **Subagents.** The agent can `delegate` tasks to subagents, either from ready-made templates or with one-off instructions. Several delegations in one reply run in parallel. Subagents report back with `DONE`, `BLOCKED` or `QUESTION`, and a parent can answer a question with `tell` so the subagent picks up where it stopped.
 - **Sandboxes.** Code, installs and file work happen in rootless Podman containers with no network by default, memory, CPU and process limits, and exactly one shared folder.
-- **Skills.** Step-by-step instructions in Markdown that the agent loads only when it needs them, so the system prompt stays small.
+- **Skills.** Step-by-step instructions in Markdown that the agent loads only when it needs them, so the system prompt stays small. The agent can also write its own skills, in a folder of their own, and improve or delete them later. Yours it can never change.
 - **Memory.** A plain `MEMORY.md` file that the agent reads at the start of every conversation and edits itself.
 - **Persistent conversations.** Every conversation is saved as JSON and can be listed, reopened and renamed.
 - **Automatic compaction.** When a conversation grows past a token limit, older tasks are summarized and the most recent ones are kept word for word.
@@ -49,7 +49,7 @@ python main.py
 ```
 
 ```
-model: deepseek/deepseek-flash | tools: 19 | skills: memory, notebook | templates: coder, worker | sandboxes: python, ubuntu
+model: deepseek/deepseek-flash | tools: 22 | skills: memory, notebook | templates: coder, worker | sandboxes: python, ubuntu
 conversation: 20261015-22-11-04   (/help for commands)
 
 > what is 17% of 2340?
@@ -100,9 +100,10 @@ Anything that doesn't start with `/` is a message to the agent.
 ├── Ego/
 │   ├── SOUL.md          # who the main agent is. you write it
 │   └── MEMORY.md        # what it remembers. the agent edits this itself
-├── Skills/              # one folder per skill
+├── Skills/              # one folder per skill. these are yours: the agent can't change them
 │   ├── memory/SKILL.md
-│   └── notebook/SKILL.md
+│   ├── notebook/SKILL.md
+│   └── Learned/         # skills the agent wrote itself: the only ones it may create, edit and delete
 ├── Templates/
 │   ├── coder.md         # ready-made subagents: instructions, tools, skills
 │   └── worker.md
@@ -111,6 +112,7 @@ Anything that doesn't start with `/` is a message to the agent.
 │   ├── memory/          #   read_memory, write_memory
 │   ├── notebook/        #   nb_create, nb_open, nb_close, nb_add, nb_edit, nb_run, nb_remove, nb_show, nb_rerun
 │   ├── sandbox/         #   sandbox_shell, check_sandbox, open_sandbox, close_sandbox
+│   ├── skills/          #   create_skill, edit_skill, delete_skill
 │   └── subagents/       #   delegate, tell
 ├── Sandboxes/
 │   ├── ubuntu/Containerfile   # one folder per sandbox
@@ -161,7 +163,7 @@ The main agent can call `delegate` with a template name or its own instructions.
 - ends its work with a report that starts with `DONE`, `BLOCKED` or `QUESTION`
 - is closed when its parent's task ends, unless it's waiting for an answer to a `QUESTION`
 
-Subagents never get the main-only tools (`read_memory`, `write_memory`, `open_sandbox`, `close_sandbox`, `check_sandbox`). Agents at the maximum depth don't get `delegate` or `tell`.
+Subagents never get the main-only tools (`read_memory`, `write_memory`, `open_sandbox`, `close_sandbox`, `check_sandbox`, `create_skill`, `edit_skill`, `delete_skill`). Agents at the maximum depth don't get `delegate` or `tell`.
 
 ### Sandboxes
 
@@ -178,6 +180,18 @@ The agent can open a sandbox, but you always pick which one. The agent can stop 
 ### Memory
 
 `Ego/MEMORY.md` is included in the main agent's system prompt. When you ask it to remember or forget something, it loads the `memory` skill, reads the file, and writes back the whole updated file.
+
+### Learned skills
+
+The agent can write its own skills with `create_skill`, improve them with `edit_skill` and remove them with `delete_skill`. These tools only ever touch `Skills/Learned/<name>/SKILL.md`: your skills one level up are out of reach, whatever the agent tries.
+
+- every learned skill gets `editable: yes` in its header and a note at the top of its text, both written by the tool
+- in the agent's skill list they are tagged `[editable]`, so it knows which skills it may change before loading one
+- what counts is the folder, not the header: a skill elsewhere that says `editable: yes` is still yours and stays locked
+- a new or changed skill is usable at once, no restart needed. A learned skill with the same name as one of yours is ignored
+- only the main agent gets these tools, like the memory tools
+
+Want to keep a learned skill for good? Move its folder from `Skills/Learned/` up into `Skills/`: from then on it is yours, and the agent can't change it anymore. The folder's name is `LEARNED_SKILLS_DIR` in `config.py`.
 
 ### Notebooks
 
@@ -210,6 +224,7 @@ Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT
 | `nb_run` | main (subagents if given) | Runs one or more cells in order and returns their output. |
 | `nb_show` | main (subagents if given) | The whole notebook: every cell with code and output. |
 | `nb_rerun` | main (subagents if given) | Fresh kernel, then every cell from the top. |
+| `create_skill` / `edit_skill` / `delete_skill` | main only | Write, rewrite or delete the agent's own skills in `Skills/Learned/`. |
 | `read_memory` | main only | Reads `MEMORY.md`. |
 | `write_memory` | main only | Replaces `MEMORY.md`. |
 
