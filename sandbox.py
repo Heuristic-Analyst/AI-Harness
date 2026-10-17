@@ -81,6 +81,8 @@ def run(name):
     code, out = podman("run", "-d", "--rm", "--name", container(name),   # --rm = deleted when it stops: every start is clean
                        "--network", "podman",                     # on the named network at birth, sealed right below
                        "--security-opt", "no-new-privileges",     # no way to gain more rights than it starts with
+                       "--init",                                  # a tiny first process that cleans up finished background
+                                                                  # programs (e.g. a stopped notebook kernel) so none pile up
                        "--pids-limit", "512", "--memory", SANDBOX_MEMORY, "--cpus", SANDBOX_CPUS,   # a runaway script can't take the machine down
                        "-v", SHARED_DIR + ":/workspace:Z,noexec", # the ONLY path from your machine. noexec = files there can't be run
                        "-w", "/workspace", image(name), "sleep", "infinity")   # sleep forever = stay up, waiting for exec
