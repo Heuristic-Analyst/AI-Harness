@@ -1,7 +1,6 @@
 # Memory
 
 ## User
-- name: Ano
 
 ## Preferences
 
