@@ -5,9 +5,12 @@
 #   close            stop that kernel: its variables are gone, the file stays
 #   rerun            close + start a fresh kernel + run every cell from the top
 #   anything else    (show, add, edit, run, remove) is handed to the notebook's running kernel
+# starting and stopping a kernel happens one messenger at a time (only_one), so a notebook never gets two kernels.
 # the command arrives as base64 (letters and digits only), so quotes, $ or backticks in the code can't confuse bash.
 
 import base64
+import contextlib
+import fcntl
 import glob
 import json
 import os
@@ -35,6 +38,14 @@ def connect(address, wait=0):
                 return None
             time.sleep(0.1)
 
+@contextlib.contextmanager
+def only_one(path):
+    """one messenger at a time may start or stop the kernel of a notebook. without this, two calls opening the same
+    notebook at the same moment (one reply with two calls, or two subagents) would start two kernels for it"""
+    with open(door(path) + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)                   # wait here while another messenger starts or stops this kernel
+        yield                                              # the lock ends when the file is closed
+
 def open_notebooks():
     """the notebooks that have a running kernel right now, for the overview after open, create and close"""
     found = []
@@ -42,8 +53,10 @@ def open_notebooks():
         try:
             with open(info) as f:
                 kernel = json.load(f)
-            os.kill(kernel["pid"], 0)                      # signal 0 = only check that the process exists
-            found.append(kernel["notebook"])
+            with open("/proc/" + str(kernel["pid"]) + "/cmdline", "rb") as f:   # is that process really this kernel?
+                alive = f.read().replace(b"\0", b" ").decode(errors="replace")    # (after a sandbox restart, an old
+            if "kernel.py" in alive and kernel["notebook"] in alive:              # kernel's number can belong to any program)
+                found.append(kernel["notebook"])
         except (OSError, ValueError, KeyError):            # a kernel that crashed left its file behind: not open
             pass
     return "open notebooks now: " + (", ".join(found) or "none")
@@ -107,55 +120,65 @@ def close(path):
             time.sleep(0.1)
 
 
-def main(payload):
-    command = json.loads(base64.b64decode(payload))
-    what = command["cmd"]
-    name = command["notebook"]                             # as the agent wrote it, e.g. analysis/sales.ipynb
-    path = os.path.normpath(os.path.join(WORKSPACE, name))
+def prepare(what, name, path):
+    """make sure the right kernel runs for this command. returns (the connection, text to put in front of the answer),
+    or (None, the whole answer) when there is nothing more to do"""
     desk = connect(door(path))                             # None = no kernel runs for this notebook = it is not open
 
     if what == "create":
         if desk:
-            return name + " is already open. use it, or nb_close it first"
+            return None, name + " is already open. use it, or nb_close it first"
         if os.path.exists(path):
-            return name + " exists already. nb_open opens it, or pick another name"
+            return None, name + " exists already. nb_open opens it, or pick another name"
         desk = start(path)                                 # the kernel creates the empty .ipynb file right away
         if isinstance(desk, str):
-            return desk
-        return "created " + name + " and started its kernel (no variables yet)\n" + open_notebooks() + "\n\n" + ask(desk, dict(command, cmd="show"), path)
+            return None, desk
+        return desk, "created " + name + " and started its kernel (no variables yet)\n" + open_notebooks() + "\n\n"
 
     if what == "open":
         if desk:
-            return name + " was already open, its variables are kept\n" + open_notebooks() + "\n\n" + ask(desk, dict(command, cmd="show"), path)
+            return desk, name + " was already open, its variables are kept\n" + open_notebooks() + "\n\n"
         if not os.path.exists(path):
-            return "there is no notebook " + name + ". nb_create makes a new one"
+            return None, "there is no notebook " + name + ". nb_create makes a new one"
         desk = start(path)
         if isinstance(desk, str):
-            return desk
-        return ("opened " + name + " with a fresh kernel: no variables yet. outputs in the file are from earlier runs; "
-                "run the cells you need (or nb_rerun for all)\n" + open_notebooks() + "\n\n" + ask(desk, dict(command, cmd="show"), path))
+            return None, desk
+        return desk, ("opened " + name + " with a fresh kernel: no variables yet. outputs in the file are from earlier runs; "
+                      "run the cells you need (or nb_rerun for all)\n" + open_notebooks() + "\n\n")
 
     if what == "close":
         if not desk:
-            return name + " is not open\n" + open_notebooks()
+            return None, name + " is not open\n" + open_notebooks()
         desk.close()
         close(path)
-        return "closed " + name + ": its variables are gone, the file stays\n" + open_notebooks()
+        return None, "closed " + name + ": its variables are gone, the file stays\n" + open_notebooks()
 
     if not desk:                                           # every other command needs a running kernel
         if os.path.exists(path):
-            return name + " is not open (or its kernel stopped, e.g. the sandbox restarted). nb_open it first"
-        return "there is no notebook " + name + ". nb_create makes a new one"
+            return None, name + " is not open (or its kernel stopped, e.g. the sandbox restarted). nb_open it first"
+        return None, "there is no notebook " + name + ". nb_create makes a new one"
 
     if what == "rerun":                                    # fresh kernel, then every cell from the top
         desk.close()
         close(path)
         desk = start(path)
         if isinstance(desk, str):
-            return desk
-        return "fresh kernel (all old variables gone), every code cell run from the top:\n" + ask(desk, dict(command, cmd="run_all"), path)
+            return None, desk
+        return desk, "fresh kernel (all old variables gone), every code cell run from the top:\n"
 
-    return ask(desk, command, path)                        # show, add, edit, run, remove
+    return desk, ""                                        # show, add, edit, run, remove: its kernel runs, go ahead
+
+
+def main(payload):
+    command = json.loads(base64.b64decode(payload))
+    name = command["notebook"]                             # as the agent wrote it, e.g. analysis/sales.ipynb
+    path = os.path.normpath(os.path.join(WORKSPACE, name))
+    with only_one(path):                                   # starting and stopping kernels: one messenger at a time
+        desk, text = prepare(command["cmd"], name, path)
+    if desk is None:                                       # nothing more to do: closed, not open, an error, ...
+        return text
+    work = {"create": "show", "open": "show", "rerun": "run_all"}.get(command["cmd"], command["cmd"])
+    return text + ask(desk, dict(command, cmd=work), path)   # the real work, outside the lock: it may take minutes
 
 
 if __name__ == "__main__":
