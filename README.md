@@ -201,10 +201,10 @@ Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT
 | `check_sandbox` | main only | Shows sandbox state without changing anything. |
 | `open_sandbox` | main only | Asks you which sandbox to start. |
 | `close_sandbox` | main only | Stops the running sandbox. |
-| `nb_add` / `nb_edit` / `nb_delete` | all | Add, change or remove a notebook cell, optionally running it right away. |
-| `nb_run` | all | Runs one cell (or `all`) and returns its output. |
-| `nb_show` | all | The whole notebook: every cell with source and output. |
-| `nb_restart` | all | A fresh kernel for a notebook: all variables gone, cells kept. |
+| `nb_add` / `nb_edit` / `nb_delete` | main (subagents if given) | Add, change or remove a notebook cell, optionally running it right away. |
+| `nb_run` | main (subagents if given) | Runs one cell (or `all`) and returns its output. |
+| `nb_show` | main (subagents if given) | The whole notebook: every cell with source and output. |
+| `nb_restart` | main (subagents if given) | A fresh kernel for a notebook: all variables gone, cells kept. |
 | `read_memory` | main only | Reads `MEMORY.md`. |
 | `write_memory` | main only | Replaces `MEMORY.md`. |
 
