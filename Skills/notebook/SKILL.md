@@ -15,7 +15,7 @@ A notebook is a .ipynb file in the shared folder, made of cells. While it is ope
 ## Before you start
 
 - A sandbox must be running. Call check_sandbox; if none runs, call open_sandbox. Notebooks need python3: the python sandbox has it, the plain ubuntu one does not.
-- Never change or delete Notebook/Engine/ in the shared folder. That is the program that runs the notebooks.
+- Never change or delete Notebooks/Engine/ in the shared folder. That is the program that runs the notebooks.
 
 ## How to work
 
