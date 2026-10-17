@@ -2,7 +2,7 @@
 
 A small, readable multi-agent assistant that runs in your terminal. It talks to any LLM through [LiteLLM](https://github.com/BerriAI/litellm), can split work across subagents that run in parallel, remembers things between conversations, and runs code only inside throwaway [Podman](https://podman.io) containers, never on your machine.
 
-The whole thing is about a thousand lines of commented Python. It's meant to be read, changed and extended.
+The whole thing is under two thousand lines of commented Python. It's meant to be read, changed and extended.
 
 ## Features
 
@@ -13,6 +13,7 @@ The whole thing is about a thousand lines of commented Python. It's meant to be 
 - **Memory.** A plain `MEMORY.md` file that the agent reads at the start of every conversation and edits itself.
 - **Persistent conversations.** Every conversation is saved as JSON and can be listed, reopened and renamed.
 - **Automatic compaction.** When a conversation grows past a token limit, older tasks are summarized and the most recent ones are kept word for word.
+- **Jupyter notebooks.** The agent creates, edits and runs real `.ipynb` notebooks inside the sandbox. Variables stay alive between cells, like in Jupyter, and every change is saved to the file right away, so you can open it any time.
 - **Two modes.** In `ask` mode the agent may ask you questions. In `auto` mode it makes reasonable assumptions and decides on its own.
 
 ## Requirements
@@ -48,7 +49,7 @@ python main.py
 ```
 
 ```
-model: deepseek/deepseek-flash | tools: 10 | skills: memory | templates: coder, worker | sandboxes: ubuntu
+model: deepseek/deepseek-flash | tools: 19 | skills: memory, notebook | templates: coder, worker | sandboxes: python, ubuntu
 conversation: 20261015-22-11-04   (/help for commands)
 
 > what is 17% of 2340?
@@ -99,16 +100,23 @@ Anything that doesn't start with `/` is a message to the agent.
 ├── Ego/
 │   ├── SOUL.md          # who the main agent is. you write it
 │   └── MEMORY.md        # what it remembers. the agent edits this itself
-├── Skills/
-│   └── memory/SKILL.md  # one folder per skill
+├── Skills/              # one folder per skill
+│   ├── memory/SKILL.md
+│   └── notebook/SKILL.md
 ├── Templates/
 │   ├── coder.md         # ready-made subagents: instructions, tools, skills
 │   └── worker.md
-├── tools/               # one file per tool. subfolders are fine: tools/sandbox/sandbox_shell.py
+├── tools/               # one file per tool, sorted into folders by feature
+│   ├── basic/           #   calculate, load_skill
+│   ├── memory/          #   read_memory, write_memory
+│   ├── notebook/        #   nb_create, nb_open, nb_close, nb_add, nb_edit, nb_run, nb_remove, nb_show, nb_rerun
+│   ├── sandbox/         #   sandbox_shell, check_sandbox, open_sandbox, close_sandbox
+│   └── subagents/       #   delegate, tell
 ├── Sandboxes/
 │   ├── ubuntu/Containerfile   # one folder per sandbox
-│   └── python/Containerfile   # python + numpy, pandas, matplotlib
+│   └── python/Containerfile   # python + numpy, pandas, matplotlib: the one notebooks need
 ├── Shared/              # the only folder a sandbox can see (/workspace inside)
+│   └── Notebooks/Engine/  # kernel.py + client.py: run the notebooks inside the sandbox
 └── Conversations/       # saved conversations (.json), created on first use
     └── agents/          # subagent transcripts (.md)
 ```
@@ -171,6 +179,15 @@ The agent can open a sandbox, but you always pick which one. The agent can stop 
 
 `Ego/MEMORY.md` is included in the main agent's system prompt. When you ask it to remember or forget something, it loads the `memory` skill, reads the file, and writes back the whole updated file.
 
+### Notebooks
+
+The `nb_*` tools give the agent Jupyter-style notebooks. The tools in `tools/notebook/` only pass commands on: everything runs inside the sandbox, through the engine in `Shared/Notebooks/Engine/` (inside the sandbox: `/workspace/Notebooks/Engine/`).
+
+- `kernel.py` is the kernel of one open notebook. It keeps running, holds the variables and the cells, and writes the whole `.ipynb` file after every change.
+- `client.py` runs once per tool call. It starts a kernel (`nb_create`, `nb_open`), stops one (`nb_close`), or hands the command to the running one.
+
+Every answer ends with an overview of all cells: id, state (`ran [3]`, `not run`, `EDITED since, output is stale`, `error`) and first line, so the agent always knows where it is. The `notebook` skill tells it how to work: a plan cell at the top, one step per cell, fix cells in place, `nb_rerun` at the end. If you edit an open notebook yourself, the kernel notices and keeps your changes. Notebooks need `python3` in the sandbox: use the `python` sandbox. Moving the engine? Change `ENGINE` in `tools/notebook/_notebook.py` and the folder name in `Skills/notebook/SKILL.md`.
+
 ### Compaction
 
 Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT`, everything except the last `KEEP_TASKS` tasks is summarized by a separate request, and the summary moves into the system prompt.
@@ -187,6 +204,12 @@ Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT
 | `check_sandbox` | main only | Shows sandbox state without changing anything. |
 | `open_sandbox` | main only | Asks you which sandbox to start. |
 | `close_sandbox` | main only | Stops the running sandbox. |
+| `nb_create` / `nb_open` | main (subagents if given) | Make a new notebook or open an existing one: starts its kernel. |
+| `nb_close` | main (subagents if given) | Stops a notebook's kernel. The file stays. |
+| `nb_add` / `nb_edit` / `nb_remove` | main (subagents if given) | Add, change or remove a cell, optionally running it right away. |
+| `nb_run` | main (subagents if given) | Runs one or more cells in order and returns their output. |
+| `nb_show` | main (subagents if given) | The whole notebook: every cell with code and output. |
+| `nb_rerun` | main (subagents if given) | Fresh kernel, then every cell from the top. |
 | `read_memory` | main only | Reads `MEMORY.md`. |
 | `write_memory` | main only | Replaces `MEMORY.md`. |
 
@@ -212,7 +235,7 @@ TOOL = {
 
 ### Add a skill
 
-Create `Skills/<name>/SKILL.md`. Only the `name` and `description` go into the system prompt. The body is loaded when the agent calls `load_skill`. Skills are read at startup.
+Create `Skills/<name>/SKILL.md`. Only the `name` and `description` go into the system prompt. The body is loaded when the agent calls `load_skill`. Skills are read at startup. Keep `: ` (a colon and a space) out of the `description` line: GitHub reads the header as YAML and shows an error.
 
 ```markdown
 ---
@@ -255,4 +278,4 @@ Edit `Ego/SOUL.md`. It's the start of the main agent's system prompt.
 
 - `requirements.txt` pins `litellm==1.105.1`. Some newer pre-release versions also need the `mcp` package because of a LiteLLM bug.
 - Without Podman, the app still runs. Only the sandbox tools won't work.
-- Before pushing, add `.env` and `Conversations/` to `.gitignore` so your keys and chats stay private.
+- The included `.gitignore` keeps your keys (`.env`), your chats (`Conversations/`) and everything the agent makes in `Shared/` off GitHub. Only `Shared/Notebooks/Engine/` stays, because the notebooks need it.

@@ -7,9 +7,9 @@
 #   Ego/MEMORY.md            what it remembers across conversations. it edits this itself (memory skill)
 #   Skills/<name>/SKILL.md   one folder per skill
 #   Templates/<name>.md      ready-made subagents: instructions + tools + skills
-#   tools/<name>.py          one file per tool
+#   tools/<folder>/<name>.py one file per tool, sorted into folders (tools/notebook/nb_add.py)
 #   Sandboxes/<name>/        one folder per sandbox (a Containerfile inside)
-#   Shared/                  the only folder a sandbox can see (inside it: /workspace)
+#   Shared/                  the only folder a sandbox can see (inside it: /workspace). Shared/Notebooks/Engine runs the notebooks
 #   Conversations/           your conversations (.json), Conversations/agents/ the subagent transcripts (.md)
 #
 # setup once: pip install -r requirements.txt, and podman installed (on mac/windows also `podman machine start`)
@@ -140,9 +140,7 @@ if __name__ == "__main__":                                        # runs only wh
                 try:
                     agent.ask(text)
                 except Exception as e:                            # the model or the connection failed: say so, but keep chatting
-                    print("\nerror: " + type(e).__name__ + ": " + str(
-                        e))  # e.g. "ModuleNotFoundError: No module named 'mcp'"
-                    print("\nerror: " + str(e))
+                    print("\nerror: " + type(e).__name__ + ": " + str(e))   # e.g. "ModuleNotFoundError: No module named 'mcp'"
                     print("(what the agent did so far is kept. if it did nothing yet, your message was taken back: just send it again)")
                 if len(agent.messages) > 1:                       # only if something is in it besides the system message
                     save_conversation(agent, current)

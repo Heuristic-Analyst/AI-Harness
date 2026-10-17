@@ -6,7 +6,7 @@ import sys
 import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))     # the folder this project lives in. everything is found from here
-if HERE not in sys.path:                               # so `import tools.calculate` works no matter where you started python from
+if HERE not in sys.path:                               # so the tools find `import sandbox` and `from config import *` from anywhere
     sys.path.insert(0, HERE)
 
 # Model
@@ -44,7 +44,7 @@ SOUL_FILE = os.path.join(HERE, "Ego", "SOUL.md")                  # who the main
 MEMORY_FILE = os.path.join(HERE, "Ego", "MEMORY.md")              # what the main agent remembers. it edits this with its tools
 SKILLS_DIR = os.path.join(HERE, "Skills")                         # Skills/<name>/SKILL.md
 TEMPLATES_DIR = os.path.join(HERE, "Templates")                   # Templates/<name>.md = ready-made subagent: instructions, tools, skills
-TOOLS_DIR = os.path.join(HERE, "tools")                           # tools/<name>.py = one tool each
+TOOLS_DIR = os.path.join(HERE, "tools")                           # tools/<folder>/<name>.py = one tool each, folders as deep as you like
 SANDBOXES_DIR = os.path.join(HERE, "Sandboxes")                   # Sandboxes/<name>/Containerfile = one sandbox each
 SHARED_DIR = os.path.join(HERE, "Shared")                         # the ONLY folder of your machine a sandbox can see (inside: /workspace)
 CONVERSATIONS_DIR = os.path.join(HERE, "Conversations")           # your conversations, one .json each
