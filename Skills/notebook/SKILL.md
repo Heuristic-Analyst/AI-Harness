@@ -1,6 +1,6 @@
 ---
 name: notebook
-description: Use when you work in a Jupyter notebook with the nb_* tools: data analysis, step-by-step code, plots, or anything where variables should stay alive between steps.
+description: Use when you work in a Jupyter notebook with the nb_* tools, for data analysis, step-by-step code, plots, or anything where variables should stay alive between steps.
 ---
 
 # Notebooks
