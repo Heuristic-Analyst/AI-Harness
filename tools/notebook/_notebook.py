@@ -10,7 +10,7 @@ import base64
 import sandbox
 from config import *
 
-ENGINE = "Notebook/Engine"                                 # the engine's folder inside the shared folder. move it? change this
+ENGINE = "Notebooks/Engine"                                 # the engine's folder inside the shared folder. move it? change this
 
 def call(cmd, notebook, **args):
     """send one command to the engine in the sandbox, for one notebook. returns the answer as text"""
