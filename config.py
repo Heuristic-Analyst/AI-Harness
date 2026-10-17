@@ -118,7 +118,7 @@ SKILLS = {}                                                       # skill name -
 def load_skills():
     """read the menu: your skills first, then the ones the agent wrote. at startup, and again whenever the agent
     creates, edits or deletes one. SKILLS is filled in place, so every file that imported it sees the new menu"""
-    SKILLS.clear()
+    fresh = {}                                                    # read everything first...
     for folder, editable in ((SKILLS_DIR, False), (LEARNED_SKILLS_DIR, True)):
         if not os.path.isdir(folder):
             continue
@@ -128,10 +128,12 @@ def load_skills():
                 continue
             header, body = read_front_matter(path)
             skill = header.get("name", name)
-            if skill in SKILLS:                                   # same name as one of yours: yours wins, the agent's is skipped
+            if skill in fresh:                                    # same name as one of yours: yours wins, the agent's is skipped
                 continue
-            SKILLS[skill] = {"description": header.get("description", ""), "path": path,
-                             "editable": editable}                # decided by the folder, never by what the file claims
+            fresh[skill] = {"description": header.get("description", ""), "path": path,
+                            "editable": editable}                 # decided by the folder, never by what the file claims
+    SKILLS.clear()                                                # ...then swap it in at once, so an agent starting in another
+    SKILLS.update(fresh)                                          # thread right now never sees a half-filled menu
 
 load_skills()
 

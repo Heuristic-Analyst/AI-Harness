@@ -107,7 +107,9 @@ class Agent:
             system += ("\n\nYou have skills: step-by-step instructions for certain kinds of tasks. "
                        "When a task matches a skill, first call load_skill with its name, then follow what it returns.\nAvailable skills:")
             for skill in self.skills:                             # [editable] = one the agent wrote itself, in Skills/Learned
-                system += "\n- " + skill + (" [editable]" if SKILLS[skill]["editable"] else "") + ": " + SKILLS[skill]["description"]
+                entry = SKILLS.get(skill)
+                if entry:                                         # deleted a moment ago? then it's simply not listed
+                    system += "\n- " + skill + (" [editable]" if entry["editable"] else "") + ": " + entry["description"]
             if "create_skill" in self.tool_names:
                 system += ("\nSkills marked [editable] are ones you wrote yourself: improve them with edit_skill when you learn "
                            "something better, remove them with delete_skill when they are no longer useful. The others are "
@@ -130,7 +132,7 @@ class Agent:
 
     def pick_skills(self):
         """the skills this agent may load, from the menu as it is right now"""
-        return [skill for skill in SKILLS if self.skill_choice == "all" or skill in self.skill_choice]
+        return [skill for skill in list(SKILLS) if self.skill_choice == "all" or skill in self.skill_choice]   # list(): a snapshot
 
     def refresh_system(self):
         self.skills = self.pick_skills()                          # skills can come and go while it runs (create_skill, delete_skill)
