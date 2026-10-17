@@ -28,7 +28,8 @@ MAX_TOOL_RESULT = 20_000               # longest tool result (in characters) tha
 # Subagents
 MAX_CHILDREN = 5                       # subagents one agent may have alive at the same time
 MAX_DEPTH = 3                          # you talk to depth 1. it may create depth 2, which may create depth 3, which may not create any
-MAIN_ONLY_TOOLS = ["read_memory", "write_memory", "open_sandbox", "close_sandbox", "check_sandbox"]                 # subagents never get these, whatever a template says
+MAIN_ONLY_TOOLS = ["read_memory", "write_memory", "open_sandbox", "close_sandbox", "check_sandbox",   # subagents never get these,
+                   "create_skill", "edit_skill", "delete_skill"]                                       # whatever a template says
 DEFAULT_SUBAGENT_TOOLS = ["calculate", "load_skill", "sandbox_shell", "delegate", "tell"]   # for a subagent made without a template
 
 # Sandbox (see sandbox.py)
@@ -42,7 +43,9 @@ MAX_TOOL_TIMEOUT = 600                 # seconds a sandbox command may run befor
 ENV_FILE = os.path.join(HERE, ".env")
 SOUL_FILE = os.path.join(HERE, "Ego", "SOUL.md")                  # who the main agent is. you write it, the agent only reads it
 MEMORY_FILE = os.path.join(HERE, "Ego", "MEMORY.md")              # what the main agent remembers. it edits this with its tools
-SKILLS_DIR = os.path.join(HERE, "Skills")                         # Skills/<name>/SKILL.md
+SKILLS_DIR = os.path.join(HERE, "Skills")                         # Skills/<name>/SKILL.md = your skills. the agent can't change them
+LEARNED_SKILLS_DIR = os.path.join(SKILLS_DIR, "Learned")          # Skills/Learned/<name>/SKILL.md = skills the agent wrote itself.
+                                                                  # the ONLY skills it may create, edit and delete (tools/skills/)
 TEMPLATES_DIR = os.path.join(HERE, "Templates")                   # Templates/<name>.md = ready-made subagent: instructions, tools, skills
 TOOLS_DIR = os.path.join(HERE, "tools")                           # tools/<folder>/<name>.py = one tool each, folders as deep as you like
 SANDBOXES_DIR = os.path.join(HERE, "Sandboxes")                   # Sandboxes/<name>/Containerfile = one sandbox each
@@ -109,14 +112,28 @@ for line in read_text(ENV_FILE).splitlines():
         API_KEY = line.split("=", 1)[1].strip().strip('"\'')     # everything after the first "=", without quotes: "sk-..." -> sk-...
 
 
-# Skills: read the menu once at startup. only name + description; the instructions are loaded on demand with load_skill
-SKILLS = {}                                                       # skill name -> description and file
-if os.path.isdir(SKILLS_DIR):
-    for folder in sorted(os.listdir(SKILLS_DIR)):                 # one subfolder per skill
-        path = os.path.join(SKILLS_DIR, folder, "SKILL.md")
-        if os.path.isfile(path):                                  # a folder without SKILL.md is not a skill
+# Skills: the menu. only name + description; the instructions are loaded on demand with load_skill
+SKILLS = {}                                                       # skill name -> description, file, and whether the agent may change it
+
+def load_skills():
+    """read the menu: your skills first, then the ones the agent wrote. at startup, and again whenever the agent
+    creates, edits or deletes one. SKILLS is filled in place, so every file that imported it sees the new menu"""
+    SKILLS.clear()
+    for folder, editable in ((SKILLS_DIR, False), (LEARNED_SKILLS_DIR, True)):
+        if not os.path.isdir(folder):
+            continue
+        for name in sorted(os.listdir(folder)):                   # one subfolder per skill
+            path = os.path.join(folder, name, "SKILL.md")
+            if not os.path.isfile(path):                          # a folder without SKILL.md is not a skill (e.g. Learned/ itself)
+                continue
             header, body = read_front_matter(path)
-            SKILLS[header.get("name", folder)] = {"description": header.get("description", ""), "path": path}
+            skill = header.get("name", name)
+            if skill in SKILLS:                                   # same name as one of yours: yours wins, the agent's is skipped
+                continue
+            SKILLS[skill] = {"description": header.get("description", ""), "path": path,
+                             "editable": editable}                # decided by the folder, never by what the file claims
+
+load_skills()
 
 
 # Templates: ready-made subagents. read fresh every time, so you can add one while the program runs

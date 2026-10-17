@@ -85,10 +85,8 @@ class Agent:
         self.busy = threading.Lock()                              # one question at a time per agent
         self.printing = None                                      # which kind of text is being printed right now: THINKING or ANSWER
 
-        self.skills = []                                          # the skill names this agent may load
-        for skill in SKILLS:
-            if skills == "all" or skill in skills:
-                self.skills.append(skill)
+        self.skill_choice = skills                                # "all", or the list of skill names it was given
+        self.skills = self.pick_skills()                          # the skill names this agent may load
 
         self.tools = []                                           # the tool descriptions this agent gets, in the model's format
         for tool in TOOLS:
@@ -108,8 +106,12 @@ class Agent:
         if self.skills:                                           # 3. the skills menu: names and descriptions, loaded on demand
             system += ("\n\nYou have skills: step-by-step instructions for certain kinds of tasks. "
                        "When a task matches a skill, first call load_skill with its name, then follow what it returns.\nAvailable skills:")
-            for skill in self.skills:
-                system += "\n- " + skill + ": " + SKILLS[skill]["description"]
+            for skill in self.skills:                             # [editable] = one the agent wrote itself, in Skills/Learned
+                system += "\n- " + skill + (" [editable]" if SKILLS[skill]["editable"] else "") + ": " + SKILLS[skill]["description"]
+            if "create_skill" in self.tool_names:
+                system += ("\nSkills marked [editable] are ones you wrote yourself: improve them with edit_skill when you learn "
+                           "something better, remove them with delete_skill when they are no longer useful. The others are "
+                           "the user's: you can't change them. New skills: create_skill.")
         if "delegate" in self.tool_names:                         # 4. the templates menu, for agents that may create subagents
             system += ("\n\nYou can create subagents with delegate: from a template below, or with your own instructions.\n"
                        "Templates:")
@@ -126,7 +128,12 @@ class Agent:
             system += "\n\nSummary of the earlier conversation:\n" + self.summary
         return system
 
+    def pick_skills(self):
+        """the skills this agent may load, from the menu as it is right now"""
+        return [skill for skill in SKILLS if self.skill_choice == "all" or skill in self.skill_choice]
+
     def refresh_system(self):
+        self.skills = self.pick_skills()                          # skills can come and go while it runs (create_skill, delete_skill)
         self.messages[0] = {"role": "system", "content": self.build_system()}
 
     # --- output: the main agent prints, a subagent writes its transcript (watch it live with `tail -f`) ---
