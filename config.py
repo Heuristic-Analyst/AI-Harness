@@ -21,7 +21,7 @@ PRINT_SUBAGENT_TALK = False            # False = hide what the agent and its sub
                                        # the [started] / [reported DONE] lines stay, and the transcripts in Conversations/agents/ have it all
 
 # Conversation size (see agent.py: nothing is summarized, the agent writes checkpoints. the log keeps everything)
-CONTEXT_LIMIT = 100_000                # tokens an agent may use at most. keep it at or below the model's real limit
+CONTEXT_LIMIT = 500_000                # tokens an agent may use at most. keep it at or below the model's real limit
 CHECKPOINT_AT = 0.60                   # after a task, the context is above 60% of CONTEXT_LIMIT? the agent writes its checkpoint,
                                        # then its context is cleared: system prompt (with the checkpoint) + the last KEEP_TASKS tasks
 EMERGENCY_AT = 0.80                    # in the middle of a task, above 80%? old tool results become pointers to their files first.
@@ -31,7 +31,7 @@ KEEP_TASKS = 1                         # this many recent tasks stay word for wo
 RESULT_TO_FILE = 8_000                 # tool results longer than this (in characters) go into a file in the conversation folder.
                                        # the model gets the start and the end of it, and reads the rest with read_result
 KEEP_RESULTS = 3                       # in an emergency, the newest tool results stay in the context as they are
-REPORT_LIMIT = 6_000                   # a subagent's report should stay below this many characters: details go into files
+REPORT_LIMIT = 8_000                   # a subagent's report should stay below this many characters: details go into files
 
 # Subagents
 MAX_CHILDREN = 5                       # subagents one agent may have alive at the same time
