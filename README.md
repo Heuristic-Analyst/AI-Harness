@@ -152,13 +152,13 @@ Everything lives in `config.py`. The settings you're most likely to change:
 | `PRINT_THINKING` | `False` | Show the model's thinking in the terminal. |
 | `PRINT_TOOLS` | `True` | Show tool calls and their results in the terminal. |
 | `PRINT_SUBAGENT_TALK` | `False` | Show the messages between the agent and its subagents (`delegate` and `tell`) in the terminal. They're always in the transcripts. |
-| `CONTEXT_LIMIT` | `100_000` | Tokens an agent may use at most. Keep it at or below the model's real limit. |
+| `CONTEXT_LIMIT` | `500_000` | Tokens an agent may use at most. Keep it at or below the model's real limit. |
 | `CHECKPOINT_AT` | `0.60` | After a task, above this share of `CONTEXT_LIMIT`: checkpoint, then a fresh context. |
 | `EMERGENCY_AT` | `0.80` | In the middle of a task, above this share: older results become pointers, then an emergency checkpoint if needed. |
 | `KEEP_TASKS` | `1` | How many recent tasks stay word for word after a checkpoint. |
 | `RESULT_TO_FILE` | `8_000` | Tool results longer than this (characters) go into a file; the model gets a preview. |
 | `KEEP_RESULTS` | `3` | In an emergency, the newest tool results stay in the context as they are. |
-| `REPORT_LIMIT` | `6_000` | A subagent's report should stay below this many characters. |
+| `REPORT_LIMIT` | `8_000` | A subagent's report should stay below this many characters. |
 | `MAX_CHILDREN` | `5` | Live subagents one agent may have at once. |
 | `MAX_DEPTH` | `3` | How deep the agent tree may go. You talk to depth 1. |
 | `RUN_PARALLEL` | `3` | Project runs: shifts that run at the same time. |
