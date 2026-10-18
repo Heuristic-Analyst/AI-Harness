@@ -9,9 +9,11 @@ The agent's only way to run commands: inside a Podman container, never on your m
 | `open_sandbox` | main only | Starts the sandbox the agent picked, optionally with a project mounted. You are not asked. |
 | `close_sandbox` | main only | Stops this instance's sandbox. Its project is free again; files in the mounted folders stay. |
 | `check_projects` | main only | Lists the project folders in `Shared/`: free, mounted here, or mounted by another instance. Changes nothing. |
-| `mount_project` | main only | Mounts one project folder at `/workspace/<project>`. A new name creates the folder. Restarts the sandbox. |
+| `mount_project` | main only | Mounts one existing project folder at `/workspace/<project>`. Restarts the sandbox. |
 | `unmount_project` | main only | Unmounts the project, so other instances can mount it. Restarts the sandbox. |
-| `rename_project` | main only | Renames a project folder. Not while any sandbox has it mounted, and never `common` or `Notebooks`. |
+| `create_project` | main only | Creates a new, empty project folder in `Shared/`. |
+| `delete_project` | main only | Deletes a project folder with everything in it. Only when the user asked; not while any sandbox has it mounted. |
+| `rename_project` | main only | Renames a project folder. Not while any sandbox has it mounted. |
 
 ## Good to know
 
@@ -20,8 +22,8 @@ The agent's only way to run commands: inside a Podman container, never on your m
 - What a sandbox sees of your machine:
   - `Shared/common/` at `/workspace/common`: always, in every instance. That's where instances share files. It can't be unmounted.
   - `Shared/<project>/` at `/workspace/<project>`: one project at most, mounted by the agent. While one instance has it, no other can mount it.
-  - `Shared/Notebooks/Engine/` at `/workspace/Notebooks/Engine`, read-only: the notebook engine.
-- Nothing else of your machine, not even the rest of `Shared/`. `common` and `Notebooks` are not projects: they can't be mounted or renamed as one.
+  - `Shared/Notebooks_Engine/` at `/workspace/Notebooks_Engine`, read-only: the notebook engine.
+- Nothing else of your machine, not even the rest of `Shared/`. `common` and `Notebooks_Engine` are not projects: no project tool creates, mounts, renames or deletes them.
 - All of them are mounted `noexec`, so scripts there run through an interpreter (`python x.py`, `bash x.sh`).
 - Podman can't add or remove a folder of a running container, so `mount_project` and `unmount_project` restart the sandbox. Opening a sandbox with the project right away avoids that.
 - A project counts as taken while a container of a running instance has it. When an instance ends, gracefully or in a crash, its project is free again: a crashed instance's container is removed the next time any instance looks.

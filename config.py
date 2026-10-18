@@ -29,8 +29,9 @@ MAX_TOOL_RESULT = 20_000               # longest tool result (in characters) tha
 MAX_CHILDREN = 5                       # subagents one agent may have alive at the same time
 MAX_DEPTH = 3                          # you talk to depth 1. it may create depth 2, which may create depth 3, which may not create any
 MAIN_ONLY_TOOLS = ["read_memory", "write_memory", "open_sandbox", "close_sandbox", "check_sandbox",   # subagents never get these,
-                   "mount_project", "unmount_project", "check_projects", "rename_project",             # whatever a template says.
-                   "create_skill", "edit_skill", "delete_skill"]                                       # they work in their parent's sandbox
+                   "check_projects", "mount_project", "unmount_project",                               # whatever a template says.
+                   "create_project", "delete_project", "rename_project",                               # they work in their
+                   "create_skill", "edit_skill", "delete_skill"]                                       # parent's sandbox
 DEFAULT_SUBAGENT_TOOLS = ["calculate", "load_skill", "sandbox_shell", "delegate", "tell"]   # for a subagent made without a template
 
 # Sandbox (see sandbox.py)
@@ -50,7 +51,7 @@ TEMPLATES_DIR = os.path.join(HERE, "Templates")                   # Templates/<n
 TOOLS_DIR = os.path.join(HERE, "tools")                           # tools/<folder>/<name>.py = one tool each, folders as deep as you like
 SANDBOXES_DIR = os.path.join(HERE, "Sandboxes")                   # Sandboxes/<name>/Containerfile = one sandbox each
 SHARED_DIR = os.path.join(HERE, "Shared")                         # the ONLY folder of your machine a sandbox sees parts of: common/ (always),
-                                                                  # one project folder, and Notebooks/Engine read-only (see sandbox.py)
+                                                                  # one project folder, and Notebooks_Engine read-only (see sandbox.py)
 CONVERSATIONS_DIR = os.path.join(HERE, "Conversations")           # your conversations, one .json each
 RUNS_DIR = os.path.join(CONVERSATIONS_DIR, "agents")              # subagent transcripts, one .md each
 

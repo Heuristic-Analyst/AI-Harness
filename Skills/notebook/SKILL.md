@@ -15,7 +15,7 @@ A notebook is a .ipynb file in one of the user's folders (common/ or the mounted
 ## Before you start
 
 - A sandbox must be running. Call check_sandbox; if none runs, open one whose Containerfile has python3 (and the packages you need) with open_sandbox. The plain ubuntu one has no python3.
-- Where the notebook goes: into the project when the work belongs to one, otherwise into common/. Never into /workspace/Notebooks: that holds the program that runs the notebooks, and it is read-only. Mount the project BEFORE you open notebooks: mount_project and unmount_project restart the sandbox, and that closes every open notebook.
+- Where the notebook goes: into the project when the work belongs to one, otherwise into common/. Never into /workspace/Notebooks_Engine: that holds the program that runs the notebooks, and it is read-only. Mount the project BEFORE you open notebooks: mount_project and unmount_project restart the sandbox, and that closes every open notebook.
 
 ## How to work
 

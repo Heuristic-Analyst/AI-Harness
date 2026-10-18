@@ -1,7 +1,7 @@
 # _notebook.py — what every nb_* tool next to this file goes through. (the _ in front: not a tool, the tool loader skips it)
 # the notebooks themselves run INSIDE the sandbox. their engine lives in the shared folder, and every sandbox sees it read-only:
-#   on your machine:     Shared/Notebooks/Engine/kernel.py and client.py
-#   inside the sandbox:  /workspace/Notebooks/Engine/...           (mounted by sandbox.py, ENGINE there)
+#   on your machine:     Shared/Notebooks_Engine/kernel.py and client.py
+#   inside the sandbox:  /workspace/Notebooks_Engine/...           (mounted by sandbox.py, ENGINE there)
 # a tool call = one run of client.py inside the sandbox, with one command. client.py hands it to the notebook's kernel.
 # the notebooks live in the folders the sandbox shares with you: common/... or <project>/... (inside: /workspace/...)
 

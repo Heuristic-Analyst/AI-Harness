@@ -9,7 +9,7 @@ Everything the agent can *do* is a tool, and every tool is one Python file in he
 | [`basic/`](basic/) | `calculate`, `load_skill` | Arithmetic, and loading a skill's instructions |
 | [`memory/`](memory/) | `read_memory`, `write_memory` | The agent's memory file, `Ego/MEMORY.md` |
 | [`notebook/`](notebook/) | `nb_create`, `nb_open`, `nb_close`, `nb_add`, `nb_edit`, `nb_run`, `nb_remove`, `nb_show`, `nb_rerun` | Jupyter notebooks that run in the sandbox |
-| [`sandbox/`](sandbox/) | `sandbox_shell`, `check_sandbox`, `open_sandbox`, `close_sandbox`, `check_projects`, `mount_project`, `unmount_project`, `rename_project` | Running commands in the sandbox, opening or closing it, and the project folders |
+| [`sandbox/`](sandbox/) | `sandbox_shell`, `check_sandbox`, `open_sandbox`, `close_sandbox`, `check_projects`, `mount_project`, `unmount_project`, `create_project`, `delete_project`, `rename_project` | Running commands in the sandbox, opening or closing it, and the project folders |
 | [`skills/`](skills/) | `create_skill`, `edit_skill`, `delete_skill` | The skills the agent writes itself, in `Skills/Learned/` |
 | [`subagents/`](subagents/) | `delegate`, `tell` | Handing work to subagents, and talking to them |
 

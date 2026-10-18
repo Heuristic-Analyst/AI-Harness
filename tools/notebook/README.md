@@ -23,9 +23,9 @@ nb_add.py, nb_run.py, ...      the tools: each one sends one command
         │
 _notebook.py                   packs the command and runs it in the sandbox (through sandbox.exec)
         │
-Shared/Notebooks/Engine/client.py   inside the sandbox: starts or stops kernels, or hands the command on
+Shared/Notebooks_Engine/client.py   inside the sandbox: starts or stops kernels, or hands the command on
         │
-Shared/Notebooks/Engine/kernel.py   one per open notebook: holds the variables and the cells,
+Shared/Notebooks_Engine/kernel.py   one per open notebook: holds the variables and the cells,
                                     and writes the .ipynb file after every change
 ```
 
@@ -38,5 +38,5 @@ Shared/Notebooks/Engine/kernel.py   one per open notebook: holds the variables a
 ## Good to know
 
 - Notebooks need `python3` in the sandbox, e.g. the `python` sandbox. The engine itself only uses Python's standard library.
-- The engine lives in `Shared/Notebooks/Engine/`. Every sandbox sees it read-only at `/workspace/Notebooks/Engine/`, so the agent can use it but never change it. Moving it? Change `ENGINE` in `sandbox.py`.
+- The engine lives in `Shared/Notebooks_Engine/`. Every sandbox sees it read-only at `/workspace/Notebooks_Engine/`, so the agent can use it but never change it. Moving it? Change `ENGINE` in `sandbox.py`.
 - Stopping the sandbox stops every kernel, and so does a restart by `mount_project` or `unmount_project`. The notebook files stay; the agent opens them again with `nb_open`.

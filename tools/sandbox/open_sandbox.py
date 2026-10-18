@@ -12,7 +12,7 @@ TOOL = {
                    "it later with mount_project restarts the sandbox, so if you already know the project, give it here.",
     "parameters": {"type": "object",
                    "properties": {"name": {"type": "string", "description": "the sandbox, e.g. python"},
-                                  "project": {"type": "string", "description": "optional: a project folder to mount at "
-                                              "/workspace/<project>. a new name creates the folder"}},
+                                  "project": {"type": "string", "description": "optional: an existing project folder to "
+                                              "mount at /workspace/<project>"}},
                    "required": ["name"]},
 }

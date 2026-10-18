@@ -50,7 +50,7 @@ python main.py
 ```
 
 ```
-model: deepseek/deepseek-flash | tools: 26 | skills: memory, notebook | templates: coder, worker | sandboxes: python, ubuntu
+model: deepseek/deepseek-flash | tools: 28 | skills: memory, notebook | templates: coder, worker | sandboxes: python, ubuntu
 conversation: 20261015-22-11-04   (/help for commands)
 
 > what is 17% of 2340?
@@ -108,7 +108,8 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 │   ├── basic/           #   calculate, load_skill
 │   ├── memory/          #   read_memory, write_memory
 │   ├── notebook/        #   nb_create, nb_open, nb_close, nb_add, nb_edit, nb_run, nb_remove, nb_show, nb_rerun
-│   ├── sandbox/         #   sandbox_shell, check_sandbox, open_sandbox, close_sandbox, check_projects, mount_project, unmount_project, rename_project
+│   ├── sandbox/         #   sandbox_shell, check_sandbox, open_sandbox, close_sandbox, check_projects, mount_project, unmount_project,
+│   │                    #   create_project, delete_project, rename_project
 │   ├── skills/          #   create_skill, edit_skill, delete_skill
 │   └── subagents/       #   delegate, tell
 ├── Sandboxes/
@@ -117,7 +118,7 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 ├── Shared/              # the only folder a sandbox sees parts of
 │   ├── common/          #   every sandbox of every instance: /workspace/common. created on first use
 │   ├── <project>/       #   one project per sandbox, mounted by the agent: /workspace/<project>
-│   └── Notebooks/Engine/  # kernel.py + client.py: run the notebooks inside the sandbox (mounted read-only)
+│   └── Notebooks_Engine/  # kernel.py + client.py: run the notebooks inside the sandbox (mounted read-only)
 └── Conversations/       # saved conversations (.json), created on first use
     └── agents/          # subagent transcripts (.md)
 ```
@@ -161,7 +162,7 @@ The main agent can call `delegate` with a template name or its own instructions.
 - ends its work with a report that starts with `DONE`, `BLOCKED` or `QUESTION`
 - is closed when its parent's task ends, unless it's waiting for an answer to a `QUESTION`
 
-Subagents never get the main-only tools (`read_memory`, `write_memory`, `open_sandbox`, `close_sandbox`, `check_sandbox`, `check_projects`, `mount_project`, `unmount_project`, `rename_project`, `create_skill`, `edit_skill`, `delete_skill`). They work in their parent's sandbox. Agents at the maximum depth don't get `delegate` or `tell`.
+Subagents never get the main-only tools (`read_memory`, `write_memory`, `open_sandbox`, `close_sandbox`, `check_sandbox`, `check_projects`, `mount_project`, `unmount_project`, `create_project`, `delete_project`, `rename_project`, `create_skill`, `edit_skill`, `delete_skill`). They work in their parent's sandbox. Agents at the maximum depth don't get `delegate` or `tell`.
 
 ### Sandboxes
 
@@ -175,8 +176,10 @@ A running sandbox:
 - runs with `no-new-privileges`, a 512-process limit and the memory and CPU limits from `config.py`
 - sees only these folders of your machine, all mounted `noexec`, so files there have to be run through an interpreter (`python x.py`, `bash x.sh`):
   - `Shared/common/` at `/workspace/common`: always there, in every instance, so instances can share files. It can't be unmounted.
-  - `Shared/<project>/` at `/workspace/<project>`: one project folder at most, mounted by the agent (`mount_project`). While one instance has it, no other instance can mount it. A new name creates the folder.
-  - `Shared/Notebooks/Engine/` at `/workspace/Notebooks/Engine`, read-only: the notebook engine. It can't be changed from inside.
+  - `Shared/<project>/` at `/workspace/<project>`: one project folder at most, mounted by the agent (`mount_project`). While one instance has it, no other instance can mount it. The agent can also create, rename and delete project folders, but never one that a sandbox has mounted.
+  - `Shared/Notebooks_Engine/` at `/workspace/Notebooks_Engine`, read-only: the notebook engine. It can't be changed from inside.
+
+`common` and `Notebooks_Engine` are never treated as projects: no tool creates, mounts, renames or deletes them.
 
 Podman can't add or remove a folder of a running container, so mounting or unmounting a project restarts the sandbox: what was installed or started inside is gone. The agent can avoid that by giving the project to `open_sandbox` right away. A project is free again as soon as its instance closes the sandbox or ends, also after a crash: every container carries labels (who started it, which sandbox, which project), and the container of a crashed instance is removed the next time any instance looks.
 
@@ -200,7 +203,7 @@ Want to keep a learned skill for good? Move its folder from `Skills/Learned/` up
 
 ### Notebooks
 
-The `nb_*` tools give the agent Jupyter-style notebooks, in `Shared/common/` or the mounted project. The tools in `tools/notebook/` only pass commands on: everything runs inside the sandbox, through the engine in `Shared/Notebooks/Engine/` (inside the sandbox: `/workspace/Notebooks/Engine/`, read-only).
+The `nb_*` tools give the agent Jupyter-style notebooks, in `Shared/common/` or the mounted project. The tools in `tools/notebook/` only pass commands on: everything runs inside the sandbox, through the engine in `Shared/Notebooks_Engine/` (inside the sandbox: `/workspace/Notebooks_Engine/`, read-only).
 
 - `kernel.py` is the kernel of one open notebook. It keeps running, holds the variables and the cells, and writes the whole `.ipynb` file after every change.
 - `client.py` runs once per tool call. It starts a kernel (`nb_create`, `nb_open`), stops one (`nb_close`), or hands the command to the running one.
@@ -225,6 +228,7 @@ Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT
 | `close_sandbox` | main only | Stops this instance's sandbox. |
 | `check_projects` | main only | Lists the project folders: free, mounted here, or mounted by another instance. |
 | `mount_project` / `unmount_project` | main only | Mounts one project folder, or unmounts it. Restarts the sandbox. |
+| `create_project` / `delete_project` | main only | Creates a new, empty project folder, or deletes one with everything in it. Never one a sandbox has mounted. |
 | `rename_project` | main only | Renames a project folder that no sandbox has mounted. |
 | `nb_create` / `nb_open` | main (subagents if given) | Make a new notebook or open an existing one: starts its kernel. |
 | `nb_close` | main (subagents if given) | Stops a notebook's kernel. The file stays. |
@@ -301,5 +305,5 @@ Edit `Ego/SOUL.md`. It's the start of the main agent's system prompt.
 
 - `requirements.txt` pins `litellm==1.105.1`. Some newer pre-release versions also need the `mcp` package because of a LiteLLM bug.
 - Without Podman, the app still runs. Only the sandbox tools won't work.
-- The included `.gitignore` keeps your keys (`.env`), your chats (`Conversations/`) and everything the agent makes in `Shared/` off GitHub. Only `Shared/Notebooks/Engine/` stays, because the notebooks need it.
+- The included `.gitignore` keeps your keys (`.env`), your chats (`Conversations/`) and everything the agent makes in `Shared/` off GitHub. Only `Shared/Notebooks_Engine/` stays, because the notebooks need it.
 - Editing a Containerfile leaves the old image behind on disk, without a name. `podman image prune` removes such leftovers (of all your images, not only these).

@@ -8,7 +8,7 @@
 # what a container sees of your machine, all of it in Shared/:
 #   Shared/common/            -> /workspace/common              always, in every container of every instance: the shared desk
 #   Shared/<project>/         -> /workspace/<project>           one project at most, mounted by the agent. one container at a time
-#   Shared/Notebooks/Engine/  -> /workspace/Notebooks/Engine    the notebook engine, read-only: it can't be changed from inside
+#   Shared/Notebooks_Engine/  -> /workspace/Notebooks_Engine    the notebook engine, read-only: it can't be changed from inside
 # all mounted noexec: files there can't be run directly, only through an interpreter (python x.py, bash x.sh).
 # podman can't add or remove a folder of a running container, so mounting or unmounting a project restarts the container.
 # every container carries labels: who started it (owner), which sandbox, which project. that is how an instance finds its
@@ -26,8 +26,7 @@ from config import *
 
 NOT_FOUND = 127                                                   # the exit code shells use for "no such command"
 COMMON = "common"                                                 # the folder in Shared/ every container sees
-NOTEBOOKS = "Notebooks"                                           # the folder in Shared/ with the notebook engine in it
-ENGINE = "Notebooks/Engine"                                       # the engine, in Shared/ and inside: /workspace/Notebooks/Engine
+ENGINE = "Notebooks_Engine"                                       # the folder in Shared/ with the notebook engine (kernel.py, client.py)
 INSTANCE = str(os.getpid())                                       # this running main.py: its process number
 PROJECT_NAME = r"[A-Za-z0-9][A-Za-z0-9._-]*"                      # what a project folder must be called to be mounted
 
@@ -74,8 +73,8 @@ def engine_dir():
     return os.path.normpath(os.path.join(SHARED_DIR, ENGINE))    # normpath: the right slashes on windows too
 
 def reserved(name):
-    """common and Notebooks are no projects: they can't be mounted or renamed as one (in any spelling: Common = common on mac)"""
-    return name.lower() in (COMMON.lower(), NOTEBOOKS.lower())
+    """common and Notebooks_Engine are no projects: no project tool touches them (in any spelling: Common = common on mac)"""
+    return name.lower() in (COMMON.lower(), ENGINE.lower())
 
 def workdir():
     """the working folder inside this instance's container: the project if one is mounted, otherwise common"""
@@ -185,7 +184,6 @@ def start(name, project, network):
     if os.path.isdir(engine_dir()):                               # missing? the sandbox still starts, only notebooks won't work
         args = args + ["-v", engine_dir() + ":/workspace/" + ENGINE + ":z,ro,noexec"]   # ro = read-only: the agent can't change it
     if project:
-        os.makedirs(os.path.join(SHARED_DIR, project), exist_ok=True)   # a new project: its folder is created now
         args = args + ["--label", "harness.project=" + project,  # the lock: no other instance mounts it while this runs
                        "-v", os.path.join(SHARED_DIR, project) + ":/workspace/" + project + ":Z,noexec"]   # Z = only this container
     args = args + ["-w", "/workspace/" + (project or COMMON), image(name), "sleep", "infinity"]   # sleep forever = stay up, waiting for exec
@@ -241,7 +239,7 @@ def where():
     return text + ". working folder: " + workdir() + ". everything outside these folders is gone when the sandbox stops"
 
 
-# --- projects: the folders directly in Shared/, except common and Notebooks ---
+# --- projects: the folders directly in Shared/, except common and Notebooks_Engine ---
 def projects():
     found = []
     if os.path.isdir(SHARED_DIR):
@@ -260,17 +258,34 @@ def holder(project):
             return "another instance"
     return None
 
+def name_problem(name):
+    """None if this is a good name for a project folder, otherwise why not"""
+    if name.lower() == COMMON.lower():
+        return "common is not a project: it is always mounted in every sandbox, at /workspace/common, and no tool changes it"
+    if name.lower() == ENGINE.lower():
+        return "Notebooks_Engine is not a project: it holds the notebook engine, and no tool changes it"
+    if not re.fullmatch(PROJECT_NAME, name) or len(name) > 60:
+        return "invalid project name: letters, digits, - _ . only, at most 60 characters, e.g. sales-2026"
+    return None
+
+def spelled(name):
+    """the existing project with this name in another spelling (Web for web), or None. on windows and mac those are
+    the same folder, so every tool uses the one spelling the folder really has"""
+    for existing in projects():
+        if existing.lower() == name.lower() and existing != name:
+            return existing
+    return None
+
 def check_project(project):
     """None if this instance may mount the project, otherwise why not"""
-    if project.lower() == COMMON.lower():
-        return "common is always mounted, at /workspace/common. it is not a project: pick one (check_projects lists them)"
-    if project.lower() == NOTEBOOKS.lower():
-        return "Notebooks holds the notebook engine, it is not a project: pick one (check_projects lists them)"
-    if not re.fullmatch(PROJECT_NAME, project) or len(project) > 60:
-        return "invalid project name: letters, digits, - _ . only, at most 60 characters, e.g. sales-2026"
-    for existing in projects():
-        if existing.lower() == project.lower() and existing != project:   # on windows and mac, Web and web are the same
-            return "that project is called '" + existing + "': use that spelling"   # folder: one spelling, one lock
+    problem = name_problem(project)
+    if problem:
+        return problem
+    if spelled(project):
+        return "that project is called '" + spelled(project) + "': use that spelling"
+    if project not in projects():
+        return ("no project called '" + project + "'. projects: " + (", ".join(projects()) or "none")
+                + ". create_project makes a new one")
     if holder(project) == "another instance":
         return (project + " is mounted by another instance right now, and only one sandbox at a time may have a project. "
                 "pick another one, or try again later")
@@ -290,7 +305,7 @@ def projects_status():
              "/workspace/<project>, and while it does, no other instance can mount it.",
              "common (Shared/common) is not a project: it is always mounted in every sandbox of every instance, at "
              "/workspace/common, to share files between them. it can't be unmounted.",
-             "Notebooks (Shared/Notebooks) is not a project either: it holds the notebook engine, mounted read-only."]
+             "Notebooks_Engine (Shared/Notebooks_Engine) is not a project either: it holds the notebook engine, mounted read-only."]
     if not here:
         lines.append("this instance: no sandbox runs. open_sandbox starts one, and can mount a project right away")
     elif my_project:
@@ -299,7 +314,7 @@ def projects_status():
     else:
         lines.append("this instance: sandbox " + here + ", no project mounted (working folder /workspace/common)")
     if not projects():
-        lines.append("projects: none yet. mount_project with a new name creates one")
+        lines.append("projects: none yet. create_project makes one")
         return "\n".join(lines)
     lines.append("projects:")
     for name in projects():
@@ -471,15 +486,49 @@ def unmount_project():
         old = my_project
         return "unmounted " + old + ", it is free for other instances again. " + restart(None)
 
-def rename_project(old, new):
-    """rename a project folder in Shared/. not common, not Notebooks, and not while a sandbox has it mounted"""
+def create_project(name):
+    """a new, empty project folder in Shared/"""
     with lock:
-        if reserved(old) or reserved(new):
-            return "common and Notebooks can't be renamed, and no project can be called like them"
+        problem = name_problem(name)
+        if problem:
+            return problem
+        if name in projects() or spelled(name):
+            return "a project called '" + (spelled(name) or name) + "' exists already"
+        if os.path.exists(os.path.join(SHARED_DIR, name)):         # a file with that name, not a folder
+            return "there is a file called '" + name + "' in Shared/ already: pick another name"
+        os.makedirs(os.path.join(SHARED_DIR, name))
+        return "created project " + name + " (Shared/" + name + "). mount_project mounts it"
+
+def delete_project(name):
+    """delete a project folder in Shared/ with everything in it. not common, not Notebooks_Engine, not while mounted"""
+    with lock:
+        if reserved(name):
+            return name_problem(name)
+        if spelled(name):
+            return "that project is called '" + spelled(name) + "': use that spelling"
+        if name not in projects():
+            return "no project called '" + name + "'. projects: " + (", ".join(projects()) or "none")
+        path = os.path.join(SHARED_DIR, name)
+        if os.path.islink(path):                                  # a link to a folder somewhere else: never delete through it
+            return name + " is a link to another folder, not a folder in Shared/: the user has to remove it"
+        who = holder(name)
+        if who == "you":
+            return name + " is mounted in your sandbox: unmount_project first, then delete it"
+        if who:
+            return name + " is mounted by another instance right now: it can only be deleted when no sandbox has it mounted"
+        shutil.rmtree(path)                                       # the folder and everything in it. there is no undo
+        return "deleted project " + name + " and everything in it"
+
+def rename_project(old, new):
+    """rename a project folder in Shared/. not common, not Notebooks_Engine, and not while a sandbox has it mounted"""
+    with lock:
+        if reserved(old):
+            return name_problem(old)
         if old not in projects():
             return "no project called '" + old + "'. projects: " + (", ".join(projects()) or "none")
-        if not re.fullmatch(PROJECT_NAME, new) or len(new) > 60:
-            return "invalid project name: letters, digits, - _ . only, at most 60 characters, e.g. sales-2026"
+        problem = name_problem(new)
+        if problem:
+            return problem
         for existing in projects():
             if existing.lower() == new.lower() and existing != old:   # only a new spelling of the same name is fine (web -> Web)
                 return "a project called '" + existing + "' exists already"
