@@ -11,6 +11,7 @@ Everything the agent can *do* is a tool, and every tool is one Python file in he
 | [`notebook/`](notebook/) | `nb_create`, `nb_open`, `nb_close`, `nb_add`, `nb_edit`, `nb_run`, `nb_remove`, `nb_show`, `nb_rerun` | Jupyter notebooks that run in the sandbox |
 | [`sandbox/`](sandbox/) | `sandbox_shell`, `check_sandbox`, `open_sandbox`, `close_sandbox`, `check_projects`, `mount_project`, `unmount_project`, `create_project`, `delete_project`, `rename_project` | Running commands in the sandbox, opening or closing it, and the project folders |
 | [`results/`](results/) | `read_result`, `search_result`, `copy_result` | Long tool results, saved as files: reading, searching, copying them into the sandbox |
+| [`projects/`](projects/) | `start_run`, `run_status`, `message_run`, `pause_run` (+ the node tools in `_nodes/`) | Project runs: starting and following one, its graph, its scheduler |
 | [`skills/`](skills/) | `create_skill`, `edit_skill`, `delete_skill` | The skills the agent writes itself, in `Skills/Learned/` |
 | [`subagents/`](subagents/) | `delegate`, `tell` | Handing work to subagents, and talking to them |
 
@@ -40,8 +41,8 @@ TOOL = {
 
 ## Who gets which tool
 
-- The main agent gets all of them.
-- A subagent gets the tools its template lists, or a default set (`DEFAULT_SUBAGENT_TOOLS` in `config.py`). It never gets the main-only ones (`MAIN_ONLY_TOOLS`): memory, opening, closing and checking the sandbox, the project tools, and writing skills. Subagents work in their parent's sandbox.
+- The main agent gets all of them. (The node tools in [`projects/_nodes/`](projects/_nodes/) are not among them: the folder starts with `_`, so the loader skips it, and only the scheduler of a project run loads them, for its nodes.)
+- A subagent gets the tools its template lists, or a default set (`DEFAULT_SUBAGENT_TOOLS` in `config.py`). It never gets the main-only ones (`MAIN_ONLY_TOOLS`): memory, opening, closing and checking the sandbox, the project tools, project runs, and writing skills. Subagents work in their parent's sandbox.
 - Agents at the deepest level (`MAX_DEPTH`) don't get `delegate` and `tell`.
 - An agent with skills always gets `load_skill`, because skills are useless without it.
 

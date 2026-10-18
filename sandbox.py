@@ -8,6 +8,7 @@
 # what a container sees of your machine, all of it in Shared/:
 #   Shared/common/            -> /workspace/common              always, in every container of every instance: the shared desk
 #   Shared/<project>/         -> /workspace/<project>           one project at most, mounted by the agent. one container at a time
+#   Shared/<project>/.graph/  -> /workspace/<project>/.graph    a project run's files (tools/projects/), read-only: only tools change them
 #   Shared/Notebooks_Engine/  -> /workspace/Notebooks_Engine    the notebook engine, read-only: it can't be changed from inside
 # all mounted noexec: files there can't be run directly, only through an interpreter (python x.py, bash x.sh).
 # podman can't add or remove a folder of a running container, so mounting or unmounting a project restarts the container.
@@ -166,6 +167,8 @@ def start(name, project, network):
     if project:
         args = args + ["--label", "harness.project=" + project,  # the lock: no other instance mounts it while this runs
                        "-v", os.path.join(SHARED_DIR, project) + ":/workspace/" + project + ":Z,noexec"]   # Z = only this container
+        if os.path.isdir(os.path.join(SHARED_DIR, project, ".graph")):   # a project run: its plan and state can be read
+            args = args + ["-v", os.path.join(SHARED_DIR, project, ".graph") + ":/workspace/" + project + "/.graph:Z,ro,noexec"]
     args = args + ["-w", "/workspace/" + (project or COMMON), image(name), "sleep", "infinity"]   # sleep forever = stay up, waiting for exec
     code, out = podman(*args)
     if code != 0:
