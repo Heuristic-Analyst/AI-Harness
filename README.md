@@ -121,7 +121,7 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 │   ├── common/          #   every sandbox of every instance: /workspace/common. created on first use
 │   ├── <project>/       #   one project per sandbox, mounted by the agent: /workspace/<project>
 │   └── Notebooks_Engine/  # kernel.py + client.py: run the notebooks inside the sandbox (mounted read-only)
-├── Locks/               # lock files of the running instances, created on first use
+├── Locks/               # lock files of the running instances. created on first use, cleaned up by itself
 └── Conversations/       # saved conversations (.json), created on first use
     └── agents/          # subagent transcripts (.md)
 ```
@@ -222,7 +222,7 @@ Every `main.py` you start is an instance with an id of its own (its process numb
 - **Notebooks:** an open notebook is locked, also in `common/`, until `nb_close` or the sandbox stops.
 - **Memory and skills:** they aren't locked while the agent thinks. Instead, `write_memory` and `edit_skill` only save if the file is still as the agent last read it. Otherwise they refuse, and the agent reads again and merges. Each instance reloads the skill list before your every message, so new skills show up everywhere.
 
-A lock is a file in `Locks/` that the instance keeps open, with a lock from the operating system on it. The operating system takes that lock away by itself when the instance ends, however it ends: `/exit`, a crash, a closed terminal, a killed process, a power cut. So a lock is never left behind. The files may stay (empty, 0 bytes): only the lock on them counts.
+A lock is a file in `Locks/` that the instance keeps open, with a lock from the operating system on it. The operating system takes that lock away by itself when the instance ends, however it ends: `/exit`, a crash, a closed terminal, a killed process, a power cut. So a lock is never left behind. Each instance deletes its own lock files when it gives a lock back, and all of them when it exits; it never touches another instance's files. After a crash its files stay, without the lock, so every start deletes the files nobody holds. Files that running instances hold are never touched.
 
 ### Compaction
 
