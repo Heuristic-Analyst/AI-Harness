@@ -1,8 +1,8 @@
-# agent
+# AI Harness
 
 A small, readable multi-agent assistant that runs in your terminal. It talks to any LLM through [LiteLLM](https://github.com/BerriAI/litellm), can split work across subagents that run in parallel, remembers things between conversations, and runs code only inside throwaway [Podman](https://podman.io) containers, never on your machine.
 
-The whole thing is under two thousand lines of commented Python. It's meant to be read, changed and extended.
+The whole thing is under three thousand lines of commented Python. It's meant to be read, changed and extended.
 
 ## Features
 
