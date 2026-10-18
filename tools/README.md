@@ -9,7 +9,7 @@ Everything the agent can *do* is a tool, and every tool is one Python file in he
 | [`basic/`](basic/) | `calculate`, `load_skill` | Arithmetic, and loading a skill's instructions |
 | [`memory/`](memory/) | `read_memory`, `write_memory` | The agent's memory file, `Ego/MEMORY.md` |
 | [`notebook/`](notebook/) | `nb_create`, `nb_open`, `nb_close`, `nb_add`, `nb_edit`, `nb_run`, `nb_remove`, `nb_show`, `nb_rerun` | Jupyter notebooks that run in the sandbox |
-| [`sandbox/`](sandbox/) | `sandbox_shell`, `check_sandbox`, `open_sandbox`, `close_sandbox` | Running commands in the sandbox, and opening or closing it |
+| [`sandbox/`](sandbox/) | `sandbox_shell`, `check_sandbox`, `open_sandbox`, `close_sandbox`, `check_projects`, `mount_project`, `unmount_project`, `rename_project` | Running commands in the sandbox, opening or closing it, and the project folders |
 | [`skills/`](skills/) | `create_skill`, `edit_skill`, `delete_skill` | The skills the agent writes itself, in `Skills/Learned/` |
 | [`subagents/`](subagents/) | `delegate`, `tell` | Handing work to subagents, and talking to them |
 
@@ -40,7 +40,7 @@ TOOL = {
 ## Who gets which tool
 
 - The main agent gets all of them.
-- A subagent gets the tools its template lists, or a default set (`DEFAULT_SUBAGENT_TOOLS` in `config.py`). It never gets the main-only ones (`MAIN_ONLY_TOOLS`): memory, opening and closing the sandbox, and writing skills.
+- A subagent gets the tools its template lists, or a default set (`DEFAULT_SUBAGENT_TOOLS` in `config.py`). It never gets the main-only ones (`MAIN_ONLY_TOOLS`): memory, opening, closing and checking the sandbox, the project tools, and writing skills. Subagents work in their parent's sandbox.
 - Agents at the deepest level (`MAX_DEPTH`) don't get `delegate` and `tell`.
 - An agent with skills always gets `load_skill`, because skills are useless without it.
 

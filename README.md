@@ -8,7 +8,8 @@ The whole thing is under two thousand lines of commented Python. It's meant to b
 
 - **Any model.** One line in `config.py` picks the model: DeepSeek, Anthropic, OpenAI, a local Ollama model, or anything else LiteLLM supports.
 - **Subagents.** The agent can `delegate` tasks to subagents, either from ready-made templates or with one-off instructions. Several delegations in one reply run in parallel. Subagents report back with `DONE`, `BLOCKED` or `QUESTION`, and a parent can answer a question with `tell` so the subagent picks up where it stopped.
-- **Sandboxes.** Code, installs and file work happen in rootless Podman containers with no network by default, memory, CPU and process limits, and exactly one shared folder.
+- **Sandboxes.** Code, installs and file work happen in rootless Podman containers with no network by default, and memory, CPU and process limits. The agent picks and opens the sandbox it needs itself. Each running `main.py` gets its own container, and its Containerfile is all there is: nothing is ever saved inside.
+- **Projects.** The agent works in folders on your machine: `Shared/common/`, which every running instance shares, and one project folder `Shared/<project>/` that it mounts, which no other instance can mount at the same time.
 - **Skills.** Step-by-step instructions in Markdown that the agent loads only when it needs them, so the system prompt stays small. The agent can also write its own skills, in a folder of their own, and improve or delete them later. Yours it can never change.
 - **Memory.** A plain `MEMORY.md` file that the agent reads at the start of every conversation and edits itself.
 - **Persistent conversations.** Every conversation is saved as JSON and can be listed, reopened and renamed.
@@ -49,7 +50,7 @@ python main.py
 ```
 
 ```
-model: deepseek/deepseek-flash | tools: 22 | skills: memory, notebook | templates: coder, worker | sandboxes: python, ubuntu
+model: deepseek/deepseek-flash | tools: 26 | skills: memory, notebook | templates: coder, worker | sandboxes: python, ubuntu
 conversation: 20261015-22-11-04   (/help for commands)
 
 > what is 17% of 2340?
@@ -68,24 +69,20 @@ Anything that doesn't start with `/` is a message to the agent.
 | `/mode ask\|auto` | `ask`: the agent may ask you questions. `auto`: it decides on its own. `/mode` alone shows the current mode. |
 | `/sandbox ...` | Manage sandboxes (see below). |
 | `/help` | Show the command list. |
-| `/exit`, `/quit` | Leave. A running sandbox is stopped, and you're asked whether to save it first. |
+| `/exit`, `/quit` | Leave. This instance's sandbox is stopped. |
 
 ### Sandbox commands
 
 | Command | What it does |
 |---|---|
-| `/sandbox list` | All sandboxes, which one is running, which have an image. |
-| `/sandbox check [name]` | State of one sandbox, or of all without a name. |
-| `/sandbox new <name> [image]` | Create a sandbox (plain Ubuntu 24.04 by default) and build it. |
-| `/sandbox run [name]` | Start a sandbox clean from its image. |
-| `/sandbox stop` | Stop the running sandbox. Unsaved changes are lost. |
-| `/sandbox save` | Make the running state the sandbox's new image. |
-| `/sandbox remove <name>` | Delete a sandbox: its folder and its image. |
-| `/sandbox reset <name>` | Forget the saved state and rebuild from the Containerfile. |
-| `/sandbox copy <name> <new>` | Make a second sandbox with the same Containerfile and saved state. The two are independent afterwards. |
-| `/sandbox rename <old> <new>` | Rename a sandbox, saved state included. It has to be stopped. |
-| `/sandbox net on\|off` | Switch internet for the running sandbox (off by default). |
-| `/sandbox shell` | A root shell inside the running sandbox, for you. |
+| `/sandbox list` | All sandboxes: which one runs here, which run in other instances, which are built. |
+| `/sandbox check [name]` | One sandbox in detail with its whole Containerfile, or all of them without a name. |
+| `/sandbox remove <name>` | Delete a sandbox: its folder and its image. Only when no instance runs it. |
+| `/sandbox rename <old> <new>` | Rename a sandbox, its image included. Only when no instance runs it. |
+| `/sandbox net on\|off` | Switch internet for this instance's sandbox (off at every start). |
+| `/sandbox shell` | A root shell inside this instance's sandbox, for you. |
+
+Opening and closing a sandbox is the agent's job, and every exit closes it. A new sandbox is a new folder in `Sandboxes/` with a Containerfile inside.
 
 ## Project layout
 
@@ -93,7 +90,7 @@ Anything that doesn't start with `/` is a message to the agent.
 .
 ├── main.py              # start here: the chat loop and the /commands
 ├── agent.py             # the Agent class: model calls, tool loop, subagents, compaction
-├── sandbox.py           # Podman sandboxes: build, run, stop, save, exec
+├── sandbox.py           # Podman sandboxes: build, run, stop, exec, project folders
 ├── config.py            # all settings and paths, plus small shared helpers
 ├── requirements.txt
 ├── .env                 # your API keys (create it yourself, don't commit it)
@@ -111,14 +108,16 @@ Anything that doesn't start with `/` is a message to the agent.
 │   ├── basic/           #   calculate, load_skill
 │   ├── memory/          #   read_memory, write_memory
 │   ├── notebook/        #   nb_create, nb_open, nb_close, nb_add, nb_edit, nb_run, nb_remove, nb_show, nb_rerun
-│   ├── sandbox/         #   sandbox_shell, check_sandbox, open_sandbox, close_sandbox
+│   ├── sandbox/         #   sandbox_shell, check_sandbox, open_sandbox, close_sandbox, check_projects, mount_project, unmount_project, rename_project
 │   ├── skills/          #   create_skill, edit_skill, delete_skill
 │   └── subagents/       #   delegate, tell
 ├── Sandboxes/
 │   ├── ubuntu/Containerfile   # one folder per sandbox
 │   └── python/Containerfile   # python + numpy, pandas, matplotlib: the one notebooks need
-├── Shared/              # the only folder a sandbox can see (/workspace inside)
-│   └── Notebooks/Engine/  # kernel.py + client.py: run the notebooks inside the sandbox
+├── Shared/              # the only folder a sandbox sees parts of
+│   ├── common/          #   every sandbox of every instance: /workspace/common. created on first use
+│   ├── <project>/       #   one project per sandbox, mounted by the agent: /workspace/<project>
+│   └── Notebooks/Engine/  # kernel.py + client.py: run the notebooks inside the sandbox (mounted read-only)
 └── Conversations/       # saved conversations (.json), created on first use
     └── agents/          # subagent transcripts (.md)
 ```
@@ -140,7 +139,6 @@ Everything lives in `config.py`. The settings you're most likely to change:
 | `MAX_TOOL_RESULT` | `20_000` | Longest tool result (characters) sent back to the model. |
 | `MAX_CHILDREN` | `5` | Live subagents one agent may have at once. |
 | `MAX_DEPTH` | `3` | How deep the agent tree may go. You talk to depth 1. |
-| `BASE_IMAGE` | `ubuntu:24.04` | Image for new sandboxes. |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `2g` / `2` | Resource limits for a running sandbox. |
 | `MAX_TOOL_TIMEOUT` | `600` | Seconds a sandbox command may run before it is stopped. |
 
@@ -163,19 +161,26 @@ The main agent can call `delegate` with a template name or its own instructions.
 - ends its work with a report that starts with `DONE`, `BLOCKED` or `QUESTION`
 - is closed when its parent's task ends, unless it's waiting for an answer to a `QUESTION`
 
-Subagents never get the main-only tools (`read_memory`, `write_memory`, `open_sandbox`, `close_sandbox`, `check_sandbox`, `create_skill`, `edit_skill`, `delete_skill`). Agents at the maximum depth don't get `delegate` or `tell`.
+Subagents never get the main-only tools (`read_memory`, `write_memory`, `open_sandbox`, `close_sandbox`, `check_sandbox`, `check_projects`, `mount_project`, `unmount_project`, `rename_project`, `create_skill`, `edit_skill`, `delete_skill`). They work in their parent's sandbox. Agents at the maximum depth don't get `delegate` or `tell`.
 
 ### Sandboxes
 
-Each folder in `Sandboxes/` is one sandbox, defined by its `Containerfile`. Building it gives an image, and running it starts a container that's deleted when it stops, so every start is clean unless you `/sandbox save`. Only one sandbox runs at a time.
+Each folder in `Sandboxes/` is one sandbox, defined by its `Containerfile`, and the Containerfile is all there is. Building it gives an image, and running it starts a container that's deleted when it stops, so every start is clean. Nothing is ever saved: the image is built from the Containerfile again at every start. Unchanged steps come from Podman's cache, so that's quick, and a change you make in a Containerfile is in the very next start.
+
+An instance is one running `main.py`. Each instance runs at most one sandbox, in its own container. Several instances can run at the same time, with the same sandbox (one image, a container each) or different ones. The agent picks a sandbox by reading the Containerfiles (`check_sandbox`) and opens and closes it itself. When you exit, its sandbox is stopped.
 
 A running sandbox:
 
 - has its network disconnected right after start (turn it on with `/sandbox net on`)
 - runs with `no-new-privileges`, a 512-process limit and the memory and CPU limits from `config.py`
-- sees only `Shared/` from your machine, mounted at `/workspace` with `noexec`, so files there have to be run through an interpreter (`python x.py`, `bash x.sh`)
+- sees only these folders of your machine, all mounted `noexec`, so files there have to be run through an interpreter (`python x.py`, `bash x.sh`):
+  - `Shared/common/` at `/workspace/common`: always there, in every instance, so instances can share files. It can't be unmounted.
+  - `Shared/<project>/` at `/workspace/<project>`: one project folder at most, mounted by the agent (`mount_project`). While one instance has it, no other instance can mount it. A new name creates the folder.
+  - `Shared/Notebooks/Engine/` at `/workspace/Notebooks/Engine`, read-only: the notebook engine. It can't be changed from inside.
 
-The agent can open a sandbox, but you always pick which one. The agent can stop a sandbox but can't save one. Only you can save.
+Podman can't add or remove a folder of a running container, so mounting or unmounting a project restarts the sandbox: what was installed or started inside is gone. The agent can avoid that by giving the project to `open_sandbox` right away. A project is free again as soon as its instance closes the sandbox or ends, also after a crash: every container carries labels (who started it, which sandbox, which project), and the container of a crashed instance is removed the next time any instance looks.
+
+The labels are also how an instance finds its own container, so containers you start yourself are never touched.
 
 ### Memory
 
@@ -195,12 +200,12 @@ Want to keep a learned skill for good? Move its folder from `Skills/Learned/` up
 
 ### Notebooks
 
-The `nb_*` tools give the agent Jupyter-style notebooks. The tools in `tools/notebook/` only pass commands on: everything runs inside the sandbox, through the engine in `Shared/Notebooks/Engine/` (inside the sandbox: `/workspace/Notebooks/Engine/`).
+The `nb_*` tools give the agent Jupyter-style notebooks, in `Shared/common/` or the mounted project. The tools in `tools/notebook/` only pass commands on: everything runs inside the sandbox, through the engine in `Shared/Notebooks/Engine/` (inside the sandbox: `/workspace/Notebooks/Engine/`, read-only).
 
 - `kernel.py` is the kernel of one open notebook. It keeps running, holds the variables and the cells, and writes the whole `.ipynb` file after every change.
 - `client.py` runs once per tool call. It starts a kernel (`nb_create`, `nb_open`), stops one (`nb_close`), or hands the command to the running one.
 
-Every answer ends with an overview of all cells: id, state (`ran [3]`, `not run`, `EDITED since, output is stale`, `error`) and first line, so the agent always knows where it is. The `notebook` skill tells it how to work: a plan cell at the top, one step per cell, fix cells in place, `nb_rerun` at the end. If you edit an open notebook yourself, the kernel notices and keeps your changes. Notebooks need `python3` in the sandbox: use the `python` sandbox. Moving the engine? Change `ENGINE` in `tools/notebook/_notebook.py` and the folder name in `Skills/notebook/SKILL.md`.
+Every answer ends with an overview of all cells: id, state (`ran [3]`, `not run`, `EDITED since, output is stale`, `error`) and first line, so the agent always knows where it is. The `notebook` skill tells it how to work: a plan cell at the top, one step per cell, fix cells in place, `nb_rerun` at the end. If you edit an open notebook yourself, the kernel notices and keeps your changes. Notebooks need `python3` in the sandbox, e.g. the `python` sandbox. Moving the engine? Change `ENGINE` in `sandbox.py`.
 
 ### Compaction
 
@@ -214,10 +219,13 @@ Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT
 | `load_skill` | agents with skills | Returns a skill's full instructions. |
 | `delegate` | above max depth | Creates a subagent with one task and returns its report. |
 | `tell` | above max depth | Sends a follow-up message to a live subagent. |
-| `sandbox_shell` | all | Runs a bash command inside the running sandbox. |
-| `check_sandbox` | main only | Shows sandbox state without changing anything. |
-| `open_sandbox` | main only | Asks you which sandbox to start. |
-| `close_sandbox` | main only | Stops the running sandbox. |
+| `sandbox_shell` | all | Runs a bash command inside this instance's sandbox. |
+| `check_sandbox` | main only | Shows every sandbox with its whole Containerfile, and which one runs here. Changes nothing. |
+| `open_sandbox` | main only | Starts the sandbox the agent picked, optionally with a project mounted. |
+| `close_sandbox` | main only | Stops this instance's sandbox. |
+| `check_projects` | main only | Lists the project folders: free, mounted here, or mounted by another instance. |
+| `mount_project` / `unmount_project` | main only | Mounts one project folder, or unmounts it. Restarts the sandbox. |
+| `rename_project` | main only | Renames a project folder that no sandbox has mounted. |
 | `nb_create` / `nb_open` | main (subagents if given) | Make a new notebook or open an existing one: starts its kernel. |
 | `nb_close` | main (subagents if given) | Stops a notebook's kernel. The file stays. |
 | `nb_add` / `nb_edit` / `nb_remove` | main (subagents if given) | Add, change or remove a cell, optionally running it right away. |
@@ -278,7 +286,7 @@ You are a researcher. ...
 
 ### Add a sandbox
 
-Run `/sandbox new <name> [image]`, or create `Sandboxes/<name>/Containerfile` yourself and add whatever you want preinstalled:
+Create `Sandboxes/<name>/Containerfile` and add whatever you want preinstalled. The name: lowercase letters, digits and hyphens. The image is built the first time the agent opens it, and again whenever you change the file:
 
 ```dockerfile
 FROM docker.io/library/python:3.12
@@ -294,3 +302,4 @@ Edit `Ego/SOUL.md`. It's the start of the main agent's system prompt.
 - `requirements.txt` pins `litellm==1.105.1`. Some newer pre-release versions also need the `mcp` package because of a LiteLLM bug.
 - Without Podman, the app still runs. Only the sandbox tools won't work.
 - The included `.gitignore` keeps your keys (`.env`), your chats (`Conversations/`) and everything the agent makes in `Shared/` off GitHub. Only `Shared/Notebooks/Engine/` stays, because the notebooks need it.
+- Editing a Containerfile leaves the old image behind on disk, without a name. `podman image prune` removes such leftovers (of all your images, not only these).

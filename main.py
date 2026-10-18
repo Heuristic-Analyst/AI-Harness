@@ -9,7 +9,7 @@
 #   Templates/<name>.md      ready-made subagents: instructions + tools + skills
 #   tools/<folder>/<name>.py one file per tool, sorted into folders (tools/notebook/nb_add.py)
 #   Sandboxes/<name>/        one folder per sandbox (a Containerfile inside)
-#   Shared/                  the only folder a sandbox can see (inside it: /workspace). Shared/Notebooks/Engine runs the notebooks
+#   Shared/                  what a sandbox sees: Shared/common always, and one project folder Shared/<project> if the agent mounts one
 #   Conversations/           your conversations (.json), Conversations/agents/ the subagent transcripts (.md)
 #
 # setup once: pip install -r requirements.txt, and podman installed (on mac/windows also `podman machine start`)
@@ -83,16 +83,16 @@ HELP = """commands:
   /open <name>         continue a saved conversation
   /rename <old> <new>  rename a saved conversation
   /mode ask|auto       ask = the agent may ask you questions. auto = it decides on its own (just /mode shows the current one)
-  /sandbox ...         manage sandboxes (a bare /sandbox shows the subcommands)
+  /sandbox ...         look at the sandboxes, internet on/off, a shell (a bare /sandbox shows the subcommands)
   /help                this list
-  /exit  (or /quit)    leave. the conversation is saved already; a running sandbox is stopped (you are asked about saving)
+  /exit  (or /quit)    leave. the conversation is saved already; this instance's sandbox is stopped
 anything else is a message to the agent. ctrl+c also leaves."""
 
 
 if __name__ == "__main__":                                        # runs only when you start main.py directly, not when another file imports it
-    atexit.register(sandbox.shutdown, False)                      # whatever happens, python stops a running sandbox on the way out
+    atexit.register(sandbox.shutdown)                             # whatever happens, python stops this instance's sandbox on the way out
     if sandbox.available():
-        sandbox.cleanup()                                         # a sandbox left over from a crash is stopped first
+        sandbox.cleanup()                                         # sandboxes left over by crashed instances are removed first
     else:
         print("podman not found: sandbox tools will not work")
     agent = new_main_agent()                                      # a clean new conversation at every start
@@ -148,5 +148,5 @@ if __name__ == "__main__":                                        # runs only wh
         print()
 
     agent.close()                                                 # subagents still waiting for an answer: their transcripts are closed properly
-    sandbox.shutdown(True)                                       # stop a running sandbox, asking you whether to save it first
+    sandbox.shutdown()                                            # stop this instance's sandbox. its project is free again
     print("bye")

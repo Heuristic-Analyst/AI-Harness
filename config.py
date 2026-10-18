@@ -29,12 +29,12 @@ MAX_TOOL_RESULT = 20_000               # longest tool result (in characters) tha
 MAX_CHILDREN = 5                       # subagents one agent may have alive at the same time
 MAX_DEPTH = 3                          # you talk to depth 1. it may create depth 2, which may create depth 3, which may not create any
 MAIN_ONLY_TOOLS = ["read_memory", "write_memory", "open_sandbox", "close_sandbox", "check_sandbox",   # subagents never get these,
-                   "create_skill", "edit_skill", "delete_skill"]                                       # whatever a template says
+                   "mount_project", "unmount_project", "check_projects", "rename_project",             # whatever a template says.
+                   "create_skill", "edit_skill", "delete_skill"]                                       # they work in their parent's sandbox
 DEFAULT_SUBAGENT_TOOLS = ["calculate", "load_skill", "sandbox_shell", "delegate", "tell"]   # for a subagent made without a template
 
 # Sandbox (see sandbox.py)
 CONTAINER_CMD = "podman"               # the container program. podman is rootless: "root" inside is just you outside
-BASE_IMAGE = "docker.io/library/ubuntu:24.04"   # what a new sandbox is made from: plain ubuntu, nothing installed
 SANDBOX_MEMORY = "2g"                  # limits for a running sandbox, so a runaway script can't take your machine down
 SANDBOX_CPUS = "2"
 MAX_TOOL_TIMEOUT = 600                 # seconds a sandbox command may run before it is stopped. the same for every command
@@ -49,7 +49,8 @@ LEARNED_SKILLS_DIR = os.path.join(SKILLS_DIR, "Learned")          # Skills/Learn
 TEMPLATES_DIR = os.path.join(HERE, "Templates")                   # Templates/<name>.md = ready-made subagent: instructions, tools, skills
 TOOLS_DIR = os.path.join(HERE, "tools")                           # tools/<folder>/<name>.py = one tool each, folders as deep as you like
 SANDBOXES_DIR = os.path.join(HERE, "Sandboxes")                   # Sandboxes/<name>/Containerfile = one sandbox each
-SHARED_DIR = os.path.join(HERE, "Shared")                         # the ONLY folder of your machine a sandbox can see (inside: /workspace)
+SHARED_DIR = os.path.join(HERE, "Shared")                         # the ONLY folder of your machine a sandbox sees parts of: common/ (always),
+                                                                  # one project folder, and Notebooks/Engine read-only (see sandbox.py)
 CONVERSATIONS_DIR = os.path.join(HERE, "Conversations")           # your conversations, one .json each
 RUNS_DIR = os.path.join(CONVERSATIONS_DIR, "agents")              # subagent transcripts, one .md each
 
