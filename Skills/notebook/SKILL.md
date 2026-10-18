@@ -61,3 +61,4 @@ A note "the notebook file was changed outside" means the user edited it. Read th
 - Packages: install them with sandbox_shell (pip install ...). That needs the internet, which only the user can turn on (/sandbox net on). After the install, import works in the open notebook. Installed packages are gone when the sandbox stops: if one is needed often, tell the user to add it to the sandbox's Containerfile.
 - The kernel crashed (most often: out of memory) or the sandbox restarted (also by mount_project or unmount_project): all variables are gone. nb_open the notebook, then nb_rerun, or run the cells you need.
 - Every open notebook uses memory in the sandbox. Close the ones you are done with.
+- "open in another running instance": the user runs this program more than once, and the other one works in that notebook. Don't wait for it: use another notebook, or tell the user.

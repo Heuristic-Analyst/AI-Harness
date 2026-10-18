@@ -1,8 +1,18 @@
 import os
+import locks
 from . import _skillfile
 from config import load_skills
 
 def run(agent, name):
+    if not locks.wait_take("skills"):                         # one instance at a time changes skills
+        return "not deleted: another instance is changing a skill right now. try again"
+    try:
+        load_skills()                                         # the menu as it is now, with what other instances changed meanwhile
+        return delete(agent, name)
+    finally:
+        locks.release("skills")
+
+def delete(agent, name):
     problem = _skillfile.may_change(name)
     if problem:
         return problem

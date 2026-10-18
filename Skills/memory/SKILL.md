@@ -25,6 +25,7 @@ Do not save:
 1. Call read_memory. Always, even if you think you know what is in it: the copy in your system prompt can be outdated.
 2. Write the complete new file: keep every entry that is still true, then add, change or remove what is needed.
 3. Call write_memory with the WHOLE new file. Anything you leave out is deleted.
+   If it says the file changed since you read it: another instance (the user can run several at once) or the user saved something in between. Start again at step 1, so their change stays.
 4. Tell the user in one short sentence what you saved, changed or removed.
 
 ## Format

@@ -1,7 +1,17 @@
+import locks
 from . import _skillfile                                      # the helper next to this file
-from config import SKILLS
+from config import SKILLS, load_skills
 
 def run(agent, name, description, body):
+    if not locks.wait_take("skills"):                         # one instance at a time changes skills
+        return "not saved: another instance is changing a skill right now. try again"
+    try:
+        load_skills()                                         # the menu as it is now, with what other instances made meanwhile
+        return create(agent, name, description, body)
+    finally:
+        locks.release("skills")
+
+def create(agent, name, description, body):
     problem = _skillfile.check_name(name)
     if problem:
         return problem

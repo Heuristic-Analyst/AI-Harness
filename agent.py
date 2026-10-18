@@ -84,6 +84,9 @@ class Agent:
         self.lock = threading.Lock()                              # parallel tool calls may create subagents at once: ids are handed out one at a time
         self.busy = threading.Lock()                              # one question at a time per agent
         self.printing = None                                      # which kind of text is being printed right now: THINKING or ANSWER
+        self.memory_seen = None                                   # MEMORY.md as read_memory last showed it. write_memory checks that
+                                                                  # nobody (another instance, you) changed it since
+        self.skills_seen = {}                                     # skill name -> its file as load_skill last showed it, for edit_skill
 
         self.skill_choice = skills                                # "all", or the list of skill names it was given
         self.skills = self.pick_skills()                          # the skill names this agent may load

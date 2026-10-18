@@ -32,6 +32,7 @@ Shared/Notebooks_Engine/kernel.py   one per open notebook: holds the variables a
 - Each notebook has its own kernel, so two notebooks never mix their variables.
 - Every answer ends with an overview of all cells: id, state (`ran [3]`, `not run`, `EDITED since, output is stale`, `error`) and first line. That is how the agent keeps track. The `notebook` skill (`Skills/notebook/SKILL.md`) teaches it how to work with them.
 - If you edit an open notebook yourself, the kernel notices before its next step and keeps your changes.
+- An open notebook is locked: another running instance can't open it at the same time (its kernel would save over this one's). The lock goes with `nb_close`, when the sandbox stops or restarts, and when the instance ends, also in a crash.
 - A cell that runs too long is stopped about 30 seconds before the sandbox's own limit (`MAX_TOOL_TIMEOUT`). The variables are kept.
 - Notebooks live in the folders you keep: `common/...` or `<project>/...` (on your machine: `Shared/common/...`, `Shared/<project>/...`). Anywhere else they would be gone when the sandbox stops, so the tools refuse other paths.
 

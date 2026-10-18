@@ -21,13 +21,13 @@ import json
 import shutil
 import threading
 import subprocess
+import locks
 from config import *
 
 
 NOT_FOUND = 127                                                   # the exit code shells use for "no such command"
 COMMON = "common"                                                 # the folder in Shared/ every container sees
 ENGINE = "Notebooks_Engine"                                       # the folder in Shared/ with the notebook engine (kernel.py, client.py)
-INSTANCE = str(os.getpid())                                       # this running main.py: its process number
 PROJECT_NAME = r"[A-Za-z0-9][A-Za-z0-9._-]*"                      # what a project folder must be called to be mounted
 
 # this instance's container. changed only by start() and forget()
@@ -99,38 +99,18 @@ def containers():
         labels = c.get("Labels") or {}                            # "or {}": podman writes null when there are none
         names_of_it = c.get("Names") or [""]
         found.append({"name": names_of_it[0],
-                      "owner": labels.get("harness.owner", ""),   # the process number of the main.py that started it
+                      "owner": labels.get("harness.owner", ""),   # the id of the instance that started it (INSTANCE)
                       "sandbox": labels.get("harness.sandbox", ""),
                       "project": labels.get("harness.project", ""),   # "" = no project mounted
                       "shared": labels.get("harness.shared", "")})    # which Shared/ folder (two copies of this program
     return found                                                  # on one machine have two)
 
-def alive(owner):
-    """is the main.py with this process number still running? asked from the operating system"""
-    if owner == INSTANCE:
-        return True
-    if not owner.isdigit():
-        return False
-    if os.name == "nt":                                           # windows: os.kill would END the process, so ask tasklist
-        try:
-            done = subprocess.run(["tasklist", "/FI", "PID eq " + owner, "/NH"], capture_output=True, text=True)
-        except OSError:
-            return True                                           # can't tell: count it as alive, so nothing is removed
-        return (" " + owner + " ") in done.stdout
-    try:
-        os.kill(int(owner), 0)                                    # signal 0 = "are you there?", it does nothing to the process
-    except ProcessLookupError:
-        return False
-    except PermissionError:                                       # it exists, it just belongs to another user
-        return True
-    return True
-
 def cleanup():
     """remove leftover containers: the ones of instances that are gone (a crash, a closed terminal), so they don't hold
     their project forever, and old ones of this instance. containers of instances that still run are never touched"""
     for c in containers():
-        old_one_of_mine = c["owner"] == INSTANCE and c["name"] != my_container   # e.g. from a crashed main.py that
-        if old_one_of_mine or not alive(c["owner"]):                            # had the same process number before
+        old_one_of_mine = c["owner"] == INSTANCE and c["name"] != my_container   # e.g. our last one, still being removed
+        if old_one_of_mine or not locks.alive(c["owner"]):                       # alive = its instance lock is held
             podman("rm", "-f", c["name"])
 
 
@@ -197,11 +177,12 @@ def start(name, project, network):
     return None
 
 def forget():
-    """this instance has no container anymore"""
+    """this instance has no container anymore. its notebook kernels are gone with it, so their locks are given back"""
     global my_container, my_sandbox, my_project
     my_container = None
     my_sandbox = None
     my_project = None
+    locks.release_all("notebook-")
 
 def stop():
     podman("stop", "-t", "2", my_container)                       # the container is deleted by itself (--rm)

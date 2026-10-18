@@ -54,6 +54,12 @@ SHARED_DIR = os.path.join(HERE, "Shared")                         # the ONLY fol
                                                                   # one project folder, and Notebooks_Engine read-only (see sandbox.py)
 CONVERSATIONS_DIR = os.path.join(HERE, "Conversations")           # your conversations, one .json each
 RUNS_DIR = os.path.join(CONVERSATIONS_DIR, "agents")              # subagent transcripts, one .md each
+LOCKS_DIR = os.path.join(HERE, "Locks")                           # the lock files of all running instances (see locks.py)
+
+
+# this running main.py (an "instance"): its process number, and when it started. the time makes it unique for good:
+# after a restart (of main.py, or of the computer) another program may get the same process number, never the same id
+INSTANCE = str(os.getpid()) + "-" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")   # e.g. 48213-20261018165603
 
 
 def read_text(path):
@@ -125,6 +131,8 @@ def load_skills():
         if not os.path.isdir(folder):
             continue
         for name in sorted(os.listdir(folder)):                   # one subfolder per skill
+            if not os.path.isdir(os.path.join(folder, name)):     # a file, e.g. Learned/README.md: not a skill
+                continue
             path = os.path.join(folder, name, "SKILL.md")
             if not os.path.isfile(path):                          # a folder without SKILL.md is not a skill (e.g. Learned/ itself)
                 continue

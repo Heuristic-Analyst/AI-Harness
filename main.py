@@ -11,6 +11,7 @@
 #   Sandboxes/<name>/        one folder per sandbox (a Containerfile inside)
 #   Shared/                  what a sandbox sees: Shared/common always, and one project folder Shared/<project> if the agent mounts one
 #   Conversations/           your conversations (.json), Conversations/agents/ the subagent transcripts (.md)
+#   Locks/                   "in use" signs of the running instances (see locks.py). you can run main.py several times at once
 #
 # setup once: pip install -r requirements.txt, and podman installed (on mac/windows also `podman machine start`)
 
@@ -20,6 +21,7 @@ import atexit
 from config import *
 from agent import Agent
 import sandbox
+import locks
 
 
 def new_main_agent():
@@ -29,17 +31,32 @@ def new_main_agent():
 def conversation_file(name):
     return os.path.join(CONVERSATIONS_DIR, name + ".json")
 
+def lock_of(name):
+    return "conversation-" + name                                 # an open conversation is locked: no other instance can open it
+
 def new_name():
-    return free_name(CONVERSATIONS_DIR, timestamp(), ".json")     # e.g. 20261007-14-05-09, with -2 added if that one exists already
+    """a fresh name, e.g. 20261007-14-05-09, with -2, -3 ... added if it is taken. its lock is taken right away, so another
+    instance started in the same second can't get the same name, even before anything is saved"""
+    base = timestamp()
+    name = base
+    number = 2
+    while os.path.exists(conversation_file(name)) or not locks.take(lock_of(name)):
+        name = base + "-" + str(number)
+        number += 1
+    return name
 
 def save_conversation(agent, name):
     data = {"mode": agent.mode, "summary": agent.summary, "messages": agent.messages[1:]}   # [1:] = without the system message, it's rebuilt on open
     write_text(conversation_file(name), json.dumps(data, indent=1, ensure_ascii=False))
 
-def open_conversation(name):
-    """a fresh main agent with the saved conversation inside. returns None if there is no such conversation"""
+def open_conversation(name, current):
+    """a fresh main agent with the saved conversation inside. returns None if there is no such conversation, or if
+    another instance has it open"""
     if not os.path.isfile(conversation_file(name)):
         print("no conversation called '" + name + "'. /list shows them")
+        return None
+    if not locks.take(lock_of(name)):                             # open in another instance: both would save over each other
+        print("'" + name + "' is open in another instance. close it there first")
         return None
     with open(conversation_file(name), encoding="utf-8") as f:
         data = json.load(f)
@@ -47,6 +64,8 @@ def open_conversation(name):
     agent.mode = data["mode"]
     agent.summary = data["summary"]
     agent.messages = [{"role": "system", "content": agent.build_system()}] + data["messages"]   # new system message (memory may have changed) + the saved turns
+    if name != current:
+        locks.release(lock_of(current))                           # the one you leave is free for other instances again
     print("opened " + name + ": " + str(len(data["messages"])) + " messages")
     return agent
 
@@ -57,7 +76,10 @@ def list_conversations(current):
             if file.endswith(".json"):
                 found.append(file[:-5])
     for name in found:
-        print(("* " if name == current else "  ") + name)         # * = the one you're in
+        mark = ""
+        if name != current and not locks.free(lock_of(name)):
+            mark = " (open in another instance)"
+        print(("* " if name == current else "  ") + name + mark)  # * = the one you're in
     if current not in found:
         print("* " + current + " (nothing said yet, not saved)")
 
@@ -69,18 +91,26 @@ def rename_conversation(old, new, current):
         print("no conversation called '" + old + "'")
     elif os.path.exists(conversation_file(new)):
         print("'" + new + "' exists already")
+    elif not locks.take(lock_of(old)):                            # yours, the current one, is taken already: that's fine
+        print("'" + old + "' is open in another instance. it can be renamed when it is closed there")
+    elif not locks.take(lock_of(new)):
+        if old != current:
+            locks.release(lock_of(old))
+        print("'" + new + "' is in use by another instance")
     else:
         os.rename(conversation_file(old), conversation_file(new))
+        locks.release(lock_of(old))
         print("renamed " + old + " -> " + new)
         if current == old:
-            return new
+            return new                                            # you are in it: its new name stays locked for you
+        locks.release(lock_of(new))
     return current
 
 
 HELP = """commands:
   /new                 start a new conversation (the current one stays saved)
   /list                show saved conversations
-  /open <name>         continue a saved conversation
+  /open <name>         continue a saved conversation (not one that is open in another instance)
   /rename <old> <new>  rename a saved conversation
   /mode ask|auto       ask = the agent may ask you questions. auto = it decides on its own (just /mode shows the current one)
   /sandbox ...         look at the sandboxes, internet on/off, a shell (a bare /sandbox shows the subcommands)
@@ -90,6 +120,8 @@ anything else is a message to the agent. ctrl+c also leaves."""
 
 
 if __name__ == "__main__":                                        # runs only when you start main.py directly, not when another file imports it
+    locks.start()                                                 # this instance's own lock: the others see that it runs
+    atexit.register(locks.stop)                                   # runs last (atexit goes backwards): every lock is given back
     atexit.register(sandbox.shutdown)                             # whatever happens, python stops this instance's sandbox on the way out
     if sandbox.available():
         sandbox.cleanup()                                         # sandboxes left over by crashed instances are removed first
@@ -110,13 +142,14 @@ if __name__ == "__main__":                                        # runs only wh
 
             if words[0] == "/new":
                 agent.close()                                     # subagents still waiting for an answer end with their conversation
+                locks.release(lock_of(current))                   # free for other instances again
                 agent = new_main_agent()
                 current = new_name()
                 print("new conversation: " + current)
             elif words[0] == "/list":
                 list_conversations(current)
             elif words[0] == "/open" and len(words) == 2:
-                opened = open_conversation(words[1])
+                opened = open_conversation(words[1], current)
                 if opened:
                     agent.close()
                     agent = opened
@@ -137,6 +170,8 @@ if __name__ == "__main__":                                        # runs only wh
             elif text.startswith("/"):
                 print("unknown command. /help shows the list")
             else:
+                load_skills()                                     # skills another instance made or changed meanwhile: in the
+                agent.refresh_system()                            # menu now. (an unchanged system prompt stays the same text)
                 try:
                     agent.ask(text)
                 except Exception as e:                            # the model or the connection failed: say so, but keep chatting

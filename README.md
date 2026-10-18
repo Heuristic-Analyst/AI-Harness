@@ -13,6 +13,7 @@ The whole thing is under two thousand lines of commented Python. It's meant to b
 - **Skills.** Step-by-step instructions in Markdown that the agent loads only when it needs them, so the system prompt stays small. The agent can also write its own skills, in a folder of their own, and improve or delete them later. Yours it can never change.
 - **Memory.** A plain `MEMORY.md` file that the agent reads at the start of every conversation and edits itself.
 - **Persistent conversations.** Every conversation is saved as JSON and can be listed, reopened and renamed.
+- **Several at once.** You can run `main.py` more than once at the same time. Each instance has its own sandbox, and locks make sure two instances never work in the same conversation, project or notebook, or save the memory or a skill over each other.
 - **Automatic compaction.** When a conversation grows past a token limit, older tasks are summarized and the most recent ones are kept word for word.
 - **Jupyter notebooks.** The agent creates, edits and runs real `.ipynb` notebooks inside the sandbox. Variables stay alive between cells, like in Jupyter, and every change is saved to the file right away, so you can open it any time.
 - **Two modes.** In `ask` mode the agent may ask you questions. In `auto` mode it makes reasonable assumptions and decides on its own.
@@ -92,6 +93,7 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 ├── agent.py             # the Agent class: model calls, tool loop, subagents, compaction
 ├── sandbox.py           # Podman sandboxes: build, run, stop, exec, project folders
 ├── config.py            # all settings and paths, plus small shared helpers
+├── locks.py             # "in use" signs between running instances, released by the operating system
 ├── requirements.txt
 ├── .env                 # your API keys (create it yourself, don't commit it)
 ├── Ego/
@@ -100,7 +102,7 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 ├── Skills/              # one folder per skill. these are yours: the agent can't change them
 │   ├── memory/SKILL.md
 │   ├── notebook/SKILL.md
-│   └── Learned/         # skills the agent wrote itself: the only ones it may create, edit and delete
+│   └── Learned/         # skills the agent wrote itself: the only ones it may create, edit and delete (README.md explains)
 ├── Templates/
 │   ├── coder.md         # ready-made subagents: instructions, tools, skills
 │   └── worker.md
@@ -119,6 +121,7 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 │   ├── common/          #   every sandbox of every instance: /workspace/common. created on first use
 │   ├── <project>/       #   one project per sandbox, mounted by the agent: /workspace/<project>
 │   └── Notebooks_Engine/  # kernel.py + client.py: run the notebooks inside the sandbox (mounted read-only)
+├── Locks/               # lock files of the running instances, created on first use
 └── Conversations/       # saved conversations (.json), created on first use
     └── agents/          # subagent transcripts (.md)
 ```
@@ -209,6 +212,17 @@ The `nb_*` tools give the agent Jupyter-style notebooks, in `Shared/common/` or 
 - `client.py` runs once per tool call. It starts a kernel (`nb_create`, `nb_open`), stops one (`nb_close`), or hands the command to the running one.
 
 Every answer ends with an overview of all cells: id, state (`ran [3]`, `not run`, `EDITED since, output is stale`, `error`) and first line, so the agent always knows where it is. The `notebook` skill tells it how to work: a plan cell at the top, one step per cell, fix cells in place, `nb_rerun` at the end. If you edit an open notebook yourself, the kernel notices and keeps your changes. Notebooks need `python3` in the sandbox, e.g. the `python` sandbox. Moving the engine? Change `ENGINE` in `sandbox.py`.
+
+### Several instances at once
+
+Every `main.py` you start is an instance with an id of its own (its process number plus its start time). Instances can run side by side, and they keep out of each other's way with locks:
+
+- **Conversations:** an open conversation is locked. `/open` refuses one that's open in another instance, `/rename` too, and `/list` marks them. A new conversation's name is locked right away, so two instances started in the same second never get the same one.
+- **Projects:** a project is taken while a sandbox of a running instance has it mounted.
+- **Notebooks:** an open notebook is locked, also in `common/`, until `nb_close` or the sandbox stops.
+- **Memory and skills:** they aren't locked while the agent thinks. Instead, `write_memory` and `edit_skill` only save if the file is still as the agent last read it. Otherwise they refuse, and the agent reads again and merges. Each instance reloads the skill list before your every message, so new skills show up everywhere.
+
+A lock is a file in `Locks/` that the instance keeps open, with a lock from the operating system on it. The operating system takes that lock away by itself when the instance ends, however it ends: `/exit`, a crash, a closed terminal, a killed process, a power cut. So a lock is never left behind. The files may stay (empty, 0 bytes): only the lock on them counts.
 
 ### Compaction
 
