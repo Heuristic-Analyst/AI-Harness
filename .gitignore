@@ -5,6 +5,9 @@ Conversations/
 # python's cache files
 __pycache__/
 
+# the "in use" signs of running instances: only for this computer
+Locks/
+
 # Shared/ is where the agent's work lands: common/ and the project folders. keep only the notebook engine, it is part of the project.
 # (git can't bring a file back from an ignored folder, so it is opened up again)
 Shared/*
