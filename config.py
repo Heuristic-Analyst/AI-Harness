@@ -20,10 +20,18 @@ PRINT_TOOLS = True                     # False = hide the TOOL blocks (which too
 PRINT_SUBAGENT_TALK = False            # False = hide what the agent and its subagents say to each other (the delegate and tell calls).
                                        # the [started] / [reported DONE] lines stay, and the transcripts in Conversations/agents/ have it all
 
-# Conversation size
-CONTEXT_LIMIT = 100_000                # conversation bigger than this (in tokens)? summarize the old tasks. keep it below the model's real limit
-KEEP_TASKS = 2                         # this many recent tasks stay word for word when summarizing. 1 or more (one task is everything in between one user input to the next user input)
-MAX_TOOL_RESULT = 20_000               # longest tool result (in characters) that goes back to the model. the rest is cut off
+# Conversation size (see agent.py: nothing is summarized, the agent writes checkpoints. the log keeps everything)
+CONTEXT_LIMIT = 100_000                # tokens an agent may use at most. keep it at or below the model's real limit
+CHECKPOINT_AT = 0.60                   # after a task, the context is above 60% of CONTEXT_LIMIT? the agent writes its checkpoint,
+                                       # then its context is cleared: system prompt (with the checkpoint) + the last KEEP_TASKS tasks
+EMERGENCY_AT = 0.80                    # in the middle of a task, above 80%? old tool results become pointers to their files first.
+                                       # still above? the agent writes its checkpoint right away, and the task goes on from there
+KEEP_TASKS = 1                         # this many recent tasks stay word for word after a checkpoint. 0 or more (one task is
+                                       # everything from one user input to the next)
+RESULT_TO_FILE = 8_000                 # tool results longer than this (in characters) go into a file in the conversation folder.
+                                       # the model gets the start and the end of it, and reads the rest with read_result
+KEEP_RESULTS = 3                       # in an emergency, the newest tool results stay in the context as they are
+REPORT_LIMIT = 6_000                   # a subagent's report should stay below this many characters: details go into files
 
 # Subagents
 MAX_CHILDREN = 5                       # subagents one agent may have alive at the same time
@@ -32,7 +40,8 @@ MAIN_ONLY_TOOLS = ["read_memory", "write_memory", "open_sandbox", "close_sandbox
                    "check_projects", "mount_project", "unmount_project",                               # whatever a template says.
                    "create_project", "delete_project", "rename_project",                               # they work in their
                    "create_skill", "edit_skill", "delete_skill"]                                       # parent's sandbox
-DEFAULT_SUBAGENT_TOOLS = ["calculate", "load_skill", "sandbox_shell", "delegate", "tell"]   # for a subagent made without a template
+DEFAULT_SUBAGENT_TOOLS = ["calculate", "load_skill", "sandbox_shell", "delegate", "tell",       # for a subagent made
+                          "read_result", "search_result", "copy_result"]                       # without a template
 
 # Sandbox (see sandbox.py)
 CONTAINER_CMD = "podman"               # the container program. podman is rootless: "root" inside is just you outside
@@ -52,8 +61,8 @@ TOOLS_DIR = os.path.join(HERE, "tools")                           # tools/<folde
 SANDBOXES_DIR = os.path.join(HERE, "Sandboxes")                   # Sandboxes/<name>/Containerfile = one sandbox each
 SHARED_DIR = os.path.join(HERE, "Shared")                         # the ONLY folder of your machine a sandbox sees parts of: common/ (always),
                                                                   # one project folder, and Notebooks_Engine read-only (see sandbox.py)
-CONVERSATIONS_DIR = os.path.join(HERE, "Conversations")           # your conversations, one .json each
-RUNS_DIR = os.path.join(CONVERSATIONS_DIR, "agents")              # subagent transcripts, one .md each
+CONVERSATIONS_DIR = os.path.join(HERE, "Conversations")           # your conversations, one folder each: Conversations/<name>/
+                                                                  # (state.json, log.jsonl, checkpoint.md, results/, agents/)
 LOCKS_DIR = os.path.join(HERE, "Locks")                           # the lock files of all running instances (see locks.py)
 
 

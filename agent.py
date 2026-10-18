@@ -1,9 +1,20 @@
 # agent.py — the Agent class. one Agent = one conversation with one model.
 # the main agent you talk to and every subagent are the same class. the differences: the instructions, the tools and skills
 # it may use, how deep it sits, and where its output goes (your terminal, or its transcript file).
+#
+# every agent has a folder: the conversation's folder (Conversations/<name>/) for the main agent, and a folder in there
+# for each subagent (agents/<when>-<id>/). in it:
+#   log.jsonl       everything, word for word, one line per message or event. only ever appended, never rewritten
+#   checkpoint.md   the agent's own notes: goal, decisions, facts, done, open, next. it is in the system prompt
+#   results/        tool results too long for the context, one file each (000042-sandbox_shell.txt)
+#   agents/         its subagents, each with the same folder inside
+# nothing is ever summarized. when the context gets full, the agent writes its checkpoint and the context is cleared:
+# it goes on with its system prompt (checkpoint included) and the last task. the log still has every word.
 
 import os
+import re
 import json
+import datetime
 import logging
 import importlib.util
 import threading
@@ -44,40 +55,83 @@ Do the task with your tools. Do not ask about things you can settle with a reaso
 Your final message is your report, and it is the ONLY thing your parent will see. Start it with one word:
 - DONE: then the result, and how you got it
 - BLOCKED: what you tried, and what is missing
-- QUESTION: exactly what you need to know to continue (the parent may answer and continue you)"""
+- QUESTION: exactly what you need to know to continue (the parent may answer and continue you)
+Keep the report under """ + format(REPORT_LIMIT, ",") + """ characters. Details go into files, and the report points to them: files
+you made in /workspace/..., or your result files (results/...: your parent can read those too). Say where every claim
+comes from: a source, a file, or the command that showed it."""
 
 AUTO_MODE = """
 Autonomous mode: the user is not available for questions. You are the final decision maker. When something is unclear,
 make the most reasonable assumption, say in one line what you assumed, and continue. Answer your subagents' QUESTION reports
 yourself; never pass them on to the user."""
 
-SUMMARY_PROMPT = ("Summarize the conversation below, so it can be continued later without it. "
-                  "Keep what the user wants, decisions made, facts learned from tools, and anything unfinished. "
-                  "Leave out small talk. If there is an earlier summary, merge it in, so your summary covers everything. "
-                  "Be short and use plain sentences.")
+CHECKPOINT_PROMPT = """CHECKPOINT. Your context is getting full and will be cleared right after this message. Write your checkpoint
+now: everything you need to go on without the conversation so far. It replaces your previous checkpoint (in your system
+prompt, if there is one), so carry over everything from it that is still true. Do not call tools. Short bullets, facts
+not stories, exactly these sections:
+## Goal
+what the user wants, and what "done" means
+## Decisions
+what was decided, and why
+## Facts
+what was found out, each with where it comes from: a source, a file, or the command that showed it
+## Done
+## Open
+what is left, and the very next step
+## Files
+the files that matter: results/... (read them with read_result), and files in /workspace/...
+## Questions
+what is unclear or still to be asked"""
+
+EMERGENCY_NOTE = """
+You are in the MIDDLE of a task: say exactly where you are in it, and what you were about to do next."""
+
+GO_ON = """
+
+[note: your context was cleared in the middle of this task to make room. Your checkpoint (in your system prompt) says
+where you were: go on from there. Earlier tool results are in your results/ files: read_result shows them.]"""
+
+WHOLE_RESULTS = ["load_skill", "read_memory", "read_result", "search_result"]   # never put into a file: the agent needs all of it,
+                                                                                # and they are short by themselves
+MOVED = "[moved out of your context to make room: "               # the start of a tool result that became a pointer
 
 
-def as_text(m):
-    """one message as plain text, for the summary request. thinking is left out on purpose"""
-    if m["role"] == "tool":                                       # a tool result -> "tool calculate: 42"
-        if m["name"] in ("load_skill", "read_memory"):            # file contents: still in their files, nothing to summarize
-            return "tool " + m["name"] + ": (content was read)"
-        return "tool " + m["name"] + ": " + m["content"]
-    text = m.get("content") or ""
-    for call in m.get("tool_calls") or []:                        # a tool request -> "[calls calculate({"expression": "6*7"})]"
-        text += "\n[calls " + call["function"]["name"] + "(" + call["function"]["arguments"] + ")]"
-    return m["role"] + ": " + text
+def preview(path, text):
+    """what the model sees of a long tool result: where it is, how big, the start and the end"""
+    lines = text.split("\n")
+    head = "\n".join(lines[:40])[:3000]                           # the first 40 lines, at most 3000 characters
+    tail = "\n".join(lines[-20:])[-1500:] if len(lines) > 40 else ""   # and the last 20
+    answer = ("[result: " + path + ", " + format(len(text), ",") + " characters, " + format(len(lines), ",") + " lines. "
+              "this is only the start" + (" and the end" if tail else "") + ": read_result and search_result show the rest]\n"
+              + head)
+    if tail:
+        answer += "\n...\n" + tail
+    return answer
+
+def highest_result(folder):
+    """the highest number among the result files in this folder, 0 if there are none. the next file counts on from it,
+    also after /open: so a name is never used twice in one conversation"""
+    highest = 0
+    results = os.path.join(folder, "results")
+    if os.path.isdir(results):
+        for file in os.listdir(results):
+            number = file.split("-", 1)[0]                        # "000042-sandbox_shell.txt" -> "000042"
+            if number.isdigit():
+                highest = max(highest, int(number))
+    return highest
 
 
 class Agent:
-    def __init__(self, name, instructions, tools, skills, depth=1, memory=False, log=None):
+    def __init__(self, name, instructions, tools, skills, folder, depth=1, memory=False, log=None):
         self.name = name                                          # "main", or e.g. "main.worker-1" for a subagent
+        self.folder = folder                                      # its folder: log, checkpoint, results, subagents (see the top)
         self.instructions = instructions                          # the soul (main agent) or the template / one-off text (subagent)
         self.depth = depth                                        # 1 = talks to you. 2 = subagent. 3 = subagent of a subagent
         self.memory = memory                                      # True = MEMORY.md is shown in the system prompt (main agent only)
         self.log = log                                            # None = print to the terminal. a file = write there (subagents)
         self.mode = "ask"                                         # "ask" = may ask you questions. "auto" = decides on its own (/mode)
-        self.summary = ""                                         # summary of old tasks after a compaction. empty until then
+        self.logged_system = None                                 # the system prompt as it was last written into the log
+        self.results = highest_result(folder)                     # how many result files it has so far, for the next one's name
         self.children = {}                                        # live subagents: id -> Agent
         self.waiting = False                                      # True = its last report was a QUESTION: it stays alive until its parent answers with tell
         self.spawned = 0                                          # how many subagents this agent created so far, for their ids
@@ -129,8 +183,10 @@ class Agent:
                        "<memory>\n" + (read_text(MEMORY_FILE) or "(empty)") + "\n</memory>")
         if self.mode == "auto":                                   # 6. autonomous mode, if you switched it on
             system += "\n" + AUTO_MODE
-        if self.summary:                                          # 7. the summary of old tasks, once there is one
-            system += "\n\nSummary of the earlier conversation:\n" + self.summary
+        checkpoint = read_text(os.path.join(self.folder, "checkpoint.md"))
+        if checkpoint:                                            # 7. its checkpoint, once it wrote one
+            system += ("\n\nYour checkpoint: your own notes from earlier in this conversation, written before your context was "
+                       "cleared. It is where you stand.\n<checkpoint>\n" + checkpoint + "\n</checkpoint>")
         return system
 
     def pick_skills(self):
@@ -140,6 +196,30 @@ class Agent:
     def refresh_system(self):
         self.skills = self.pick_skills()                          # skills can come and go while it runs (create_skill, delete_skill)
         self.messages[0] = {"role": "system", "content": self.build_system()}
+
+    # --- the log: everything, one json line each, only ever appended ---
+    def record(self, kind, **fields):
+        """write one line into log.jsonl: a message, the system prompt, a checkpoint, ..."""
+        entry = {"time": datetime.datetime.now().isoformat(timespec="seconds"), "kind": kind}
+        entry.update(fields)
+        os.makedirs(self.folder, exist_ok=True)                   # the folder appears with the first line, not before
+        with open(os.path.join(self.folder, "log.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def add(self, message):
+        """put a message into the conversation, and into the log. the system prompt goes into the log first, if it
+        changed since it was last written there: so the log always shows what the agent was working with"""
+        if self.messages[0]["content"] != self.logged_system:
+            self.record("system", content=self.messages[0]["content"])
+            self.logged_system = self.messages[0]["content"]
+        self.messages.append(message)
+        self.record("message", message=message)
+
+    def moved(self, old, new):
+        """the conversation's folder was renamed (/rename): this agent and its subagents now live under the new name"""
+        self.folder = new + self.folder[len(old):]
+        for child in self.children.values():
+            child.moved(old, new)
 
     # --- output: the main agent prints, a subagent writes its transcript (watch it live with `tail -f`) ---
     def say(self, text, end="\n"):
@@ -186,9 +266,19 @@ class Agent:
             result = str(FUNCTIONS[name](self, **args))           # every tool gets the calling agent first, then the arguments
         except Exception as e:
             args, result = call.function.arguments, "error: " + str(e)   # errors go back to the model as text, so it can retry
-        if len(result) > MAX_TOOL_RESULT:                         # huge result? cut it, so one tool can't flood the context
-            result = result[:MAX_TOOL_RESULT] + "\n...(cut off, result was too long)"
+        if len(result) > RESULT_TO_FILE and name not in WHOLE_RESULTS:   # long? into a file. the model gets a preview
+            result = preview(self.save_result(name, result), result)
         results[call.id] = (args, result)
+
+    def save_result(self, name, text):
+        """put a tool result into its own file in results/. returns its path, as the agent uses it: results/000042-name.txt"""
+        with self.lock:                                           # parallel tool calls: one number each
+            self.results += 1
+            path = "results/" + str(self.results).zfill(6) + "-" + name + ".txt"   # 6 digits: in order up to 999,999
+        os.makedirs(os.path.join(self.folder, "results"), exist_ok=True)
+        with open(os.path.join(self.folder, path), "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
 
     def shows(self, call):
         """should this tool call appear? transcripts get everything; your terminal follows the PRINT_ settings"""
@@ -211,20 +301,19 @@ class Agent:
             args, result = results[call.id]
             if self.shows(call):
                 self.say("\nTOOL RESULT:\n" + call.function.name + " -> " + result)
-            self.messages.append(
-                {"role": "tool", "tool_call_id": call.id, "name": call.function.name, "content": result})
+            self.add({"role": "tool", "tool_call_id": call.id, "name": call.function.name, "content": result})
 
     # --- the agent loop ---
     def ask(self, text):
         with self.busy:                                           # a second question waits until this one is answered
             question = {"role": "user", "content": text}
-            self.messages.append(question)                        # 1. add the question to the list
+            self.add(question)                                    # 1. add the question to the list (and the log)
             if self.log:                                          #    a subagent writes what its parent sent into its transcript
                 self.say("\nFROM PARENT:\n" + text)
 
             try:
                 while True:                                       # repeat until the model answers without tool calls
-                    self.maybe_compact()                          # 2. too big? summarize the old tasks first
+                    self.make_room()                              # 2. too full in the middle of a task? make room first
                     response = litellm.completion(                # 3. send the whole list to the model
                         api_key=API_KEY,                          #    the key from .env, no environment variables involved
                         model=MODEL,
@@ -235,53 +324,129 @@ class Agent:
                         cache_control_injection_points=[{"location": "message", "index": -1}],   # cache bookmark on the last message
                     )
                     reply = self.show(response)                   # 4. print it as it arrives, get the finished reply back
-                    self.messages.append(reply.model_dump(exclude_none=True))   # 5. store the whole reply: answer, thinking, tool calls
+                    self.add(reply.model_dump(exclude_none=True))   # 5. store the whole reply: answer, thinking, tool calls
 
                     if not reply.tool_calls:                      # 6. no tool calls -> that was the final answer, done
                         break
                     self.run_tools(reply)                         #    tool calls -> run them, then loop: send the results back
+                self.maybe_checkpoint()                           # 7. the task is done: context getting full? checkpoint now
                 return reply.content or ""                        #    the final answer, for whoever asked: you, or a parent agent
             except Exception:                                     # the model or the connection failed (rate limit, network, ...)
                 if self.messages[-1] is question:                 # nothing happened yet: take the question back, so it can simply be asked again
                     self.messages.pop()
+                    self.record("question taken back", reason="the model call failed")
                 raise                                             # and let whoever asked know: main.py prints it, a parent gets it as a tool error
-            finally:                                              # 7. the task is over (or failed), so its subagents are over too,
+            finally:                                              # 8. the task is over (or failed), so its subagents are over too,
                 self.close_children(keep_waiting=True)            #    except the ones still waiting for an answer to their QUESTION
 
-    def maybe_compact(self):
-        """too many tokens? summarize everything except the last KEEP_TASKS tasks, and put the summary into the system prompt"""
-        tokens = litellm.token_counter(model=MODEL, messages=self.messages)   # an estimate, good enough to decide
-        if tokens < CONTEXT_LIMIT:
+    # --- checkpoints: when the context gets full, the agent writes down where it stands, and starts fresh ---
+    def tokens(self):
+        return litellm.token_counter(model=MODEL, messages=self.messages)   # an estimate, good enough to decide
+
+    def maybe_checkpoint(self):
+        """after a task: above CHECKPOINT_AT? the agent writes its checkpoint, and its context is cleared down to the
+        system prompt (which holds the checkpoint) and the last KEEP_TASKS tasks. only the main agent: a subagent's
+        whole life is one task, the emergency below covers it"""
+        if self.depth > 1:
             return
+        before = self.tokens()
+        if before < CHECKPOINT_AT * CONTEXT_LIMIT:
+            return
+        if not self.write_checkpoint(False):
+            return                                                # failed: it is tried again after the next task
+        self.clear(self.last_tasks())
+        self.say("\n[checkpoint written, context cleared: " + format(before, ",") + " -> " + format(self.tokens(), ",") + " tokens]")
+
+    def make_room(self):
+        """in the middle of a task, above EMERGENCY_AT: first the old tool results become pointers to their files.
+        still too full? the agent writes its checkpoint right away, and the task goes on from it with a fresh context"""
+        limit = EMERGENCY_AT * CONTEXT_LIMIT
+        before = self.tokens()
+        if before < limit:
+            return
+        moved = self.move_old_results()
+        if moved:
+            self.record("results moved to files", count=moved)
+            self.say("\n[context " + format(before, ",") + " tokens: " + str(moved) + " older tool results moved to their files -> "
+                     + format(self.tokens(), ",") + " tokens]")
+        if self.tokens() < limit:
+            return
+        task = self.last_tasks(1)[0]                              # the task it is in the middle of: its question
+        if not self.write_checkpoint(True):
+            return                                                # failed: it goes on, and the model call may fail for size
+        self.clear([{"role": "user", "content": task["content"] + GO_ON}])
+        self.say("\n[emergency checkpoint written, context cleared: " + format(before, ",") + " -> " + format(self.tokens(), ",")
+                 + " tokens. the task goes on]")
+
+    def write_checkpoint(self, emergency):
+        """ask the agent for its checkpoint (it sees everything, and its old checkpoint in the system prompt), and save it
+        into checkpoint.md, replacing the old one. the old one is still in the log. returns True if it worked"""
+        self.say("\n[writing checkpoint...]")
+        request = CHECKPOINT_PROMPT + (EMERGENCY_NOTE if emergency else "")
+        try:
+            response = litellm.completion(api_key=API_KEY, model=MODEL, reasoning_effort=EFFORT,
+                                          messages=self.messages + [{"role": "user", "content": request}],   # only for this call
+                                          tools=self.tools or None,      # some models need the tools listed when the
+                                          tool_choice="none" if self.tools else None)   # history has tool calls. none may be used
+            text = response.choices[0].message.content
+        except Exception as e:
+            self.say("\n[checkpoint failed: " + type(e).__name__ + ": " + str(e) + "]")
+            return False
+        if not text or not text.strip():
+            self.say("\n[checkpoint failed: the model wrote nothing]")
+            return False
+        write_text(os.path.join(self.folder, "checkpoint.md"), text)
+        self.record("checkpoint", content=text, emergency=emergency)
+        return True
+
+    def clear(self, kept):
+        """the context starts fresh: the system prompt (rebuilt, with the new checkpoint) and the kept messages"""
+        self.messages = [{"role": "system", "content": self.build_system()}]
+        self.record("context cleared", kept_messages=len(kept))
+        for message in kept:
+            self.add(message)
+
+    def last_tasks(self, count=None):
+        """the messages of the last KEEP_TASKS tasks (or `count`), to keep after a checkpoint. if they are big themselves,
+        only each task's question and final answer are kept: the steps in between are in the log and the result files"""
+        if count is None:
+            count = KEEP_TASKS
         starts = []                                               # the positions of the user messages: every one starts a task
         position = 0
         for m in self.messages:
             if m["role"] == "user":
                 starts.append(position)
             position += 1
-        if len(starts) <= KEEP_TASKS:                             # nothing old enough to summarize
-            return
-        cut = starts[-KEEP_TASKS]                                 # first message of the oldest task we keep word for word
-        old = self.messages[1:cut]                                # everything before it, except the system message
+        if count <= 0 or not starts:
+            return []
+        kept = self.messages[starts[-min(count, len(starts))]:]
+        if litellm.token_counter(model=MODEL, messages=kept) < 0.2 * CONTEXT_LIMIT:
+            return kept
+        short = []                                                # too big: question + final answer per task
+        for m in kept:
+            if m["role"] == "user":
+                short.append(m)
+            elif m["role"] == "assistant" and not m.get("tool_calls") and m.get("content"):
+                short.append({"role": "assistant", "content": m["content"]})
+        return short
 
-        request = SUMMARY_PROMPT
-        if self.summary:                                          # 2nd, 3rd... compaction: the earlier summary is merged in
-            request += "\n\nEarlier summary:\n" + self.summary
-        request += "\n\nConversation:"
-        for m in old:
-            request += "\n\n" + as_text(m)
-        try:
-            response = litellm.completion(api_key=API_KEY, model=MODEL, reasoning_effort="low",   # a separate small request, no tools
-                                          messages=[{"role": "user", "content": request}])
-            new_summary = response.choices[0].message.content
-        except Exception as e:                                    # summary failed? don't crash, try again next time
-            self.say("\n[compaction skipped: " + str(e) + "]")
-            return
-        if not new_summary:
-            return
-        self.summary = new_summary
-        self.messages = [{"role": "system", "content": self.build_system()}] + self.messages[cut:]   # fresh system message + kept tasks
-        self.say("\n[compacted: " + f"{tokens:,}" + " -> " + f"{litellm.token_counter(model=MODEL, messages=self.messages):,}" + " tokens]")
+    def move_old_results(self):
+        """every tool result except the newest KEEP_RESULTS becomes a short pointer to its file. results that aren't in a
+        file yet are put into one first, so nothing is lost. returns how many were moved"""
+        tool_messages = []
+        for m in self.messages:
+            if m["role"] == "tool" and not m["content"].startswith(MOVED):
+                tool_messages.append(m)
+        older = tool_messages
+        if KEEP_RESULTS:
+            older = tool_messages[:-KEEP_RESULTS]                 # the newest ones stay as they are
+        moved = 0
+        for m in older:
+            found = re.match(r"\[result: (results/[^,]+),", m["content"])   # a preview: it is in a file already
+            path = found.group(1) if found else self.save_result(m["name"], m["content"])
+            m["content"] = MOVED + path + ", " + format(len(m["content"]), ",") + " characters here before. read_result shows it]"
+            moved += 1
+        return moved
 
     # --- subagents: given one task, alive for follow-ups until this agent's task ends ---
     def delegate(self, task, template=None, instructions=None, tools=None, skills=None):
@@ -317,18 +482,19 @@ class Agent:
                 return "not allowed: you already have " + str(MAX_CHILDREN) + " subagents. wait for them or ask them more with tell"
             self.spawned += 1
             id = (template or "sub") + "-" + str(self.spawned)    # e.g. "worker-1": what the parent uses in tell
-            name = self.name + "." + id                           # e.g. "main.worker-1": unique in the whole tree, used for the file
-            os.makedirs(RUNS_DIR, exist_ok=True)
-            path = os.path.join(RUNS_DIR, free_name(RUNS_DIR, timestamp() + "-" + name, ".md") + ".md")
-            log = open(path, "w", encoding="utf-8")               # the subagent's transcript. stays open while it lives
-            child = Agent(name, instructions, allowed, skills, depth=self.depth + 1, log=log)
+            name = self.name + "." + id                           # e.g. "main.worker-1": unique in the whole tree, shown in the terminal
+            agents = os.path.join(self.folder, "agents")          # its folder sits inside this agent's folder: agents/<when>-<id>/
+            folder = os.path.join(agents, free_name(agents, timestamp() + "-" + id, ""))
+            os.makedirs(folder)
+            log = open(os.path.join(folder, "transcript.md"), "w", encoding="utf-8")   # its transcript, for you. stays open while it lives
+            child = Agent(name, instructions, allowed, skills, folder, depth=self.depth + 1, log=log)
             log.write("# " + name + "\ntools: " + ", ".join(child.tool_names) + "\nskills: " + ", ".join(child.skills) + "\n")   # what it really got
             self.children[id] = child
 
-        self.say("\n[" + name + " started -> " + os.path.relpath(path, HERE) + "]")
+        self.say("\n[" + name + " started -> " + os.path.relpath(os.path.join(folder, "transcript.md"), HERE) + "]")
         report = child.ask(task)                                  # waits until the subagent's turn is over (parallel through run_tools' threads)
         child.waiting = self.report_status(name, report) == "QUESTION"   # a QUESTION is not the end: the subagent stays alive for tell
-        return "[" + id + "] " + report                           # the id in front, so the parent knows whom to tell
+        return self.report_head(id, child) + report               # the id in front, so the parent knows whom to tell
 
     def tell(self, id, message):
         child = self.children.get(id)
@@ -337,7 +503,11 @@ class Agent:
         self.say("\n[" + child.name + " continues]")
         report = child.ask(message)                               # same subagent, full context: it carries on where it stopped
         child.waiting = self.report_status(child.name, report) == "QUESTION"   # asks again? stays alive. otherwise it ends with this task
-        return "[" + id + "] " + report
+        return self.report_head(id, child) + report
+
+    def report_head(self, id, child):
+        """what comes before a subagent's report: its id (for tell), and where its files are, seen from this agent"""
+        return "[" + id + ", its files: " + os.path.relpath(child.folder, self.folder).replace(os.sep, "/") + "/] "
 
     def report_status(self, name, report):
         """one terminal line that matches the report: DONE, BLOCKED or QUESTION. returns that word"""

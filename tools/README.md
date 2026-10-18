@@ -10,6 +10,7 @@ Everything the agent can *do* is a tool, and every tool is one Python file in he
 | [`memory/`](memory/) | `read_memory`, `write_memory` | The agent's memory file, `Ego/MEMORY.md` |
 | [`notebook/`](notebook/) | `nb_create`, `nb_open`, `nb_close`, `nb_add`, `nb_edit`, `nb_run`, `nb_remove`, `nb_show`, `nb_rerun` | Jupyter notebooks that run in the sandbox |
 | [`sandbox/`](sandbox/) | `sandbox_shell`, `check_sandbox`, `open_sandbox`, `close_sandbox`, `check_projects`, `mount_project`, `unmount_project`, `create_project`, `delete_project`, `rename_project` | Running commands in the sandbox, opening or closing it, and the project folders |
+| [`results/`](results/) | `read_result`, `search_result`, `copy_result` | Long tool results, saved as files: reading, searching, copying them into the sandbox |
 | [`skills/`](skills/) | `create_skill`, `edit_skill`, `delete_skill` | The skills the agent writes itself, in `Skills/Learned/` |
 | [`subagents/`](subagents/) | `delegate`, `tell` | Handing work to subagents, and talking to them |
 
@@ -47,5 +48,5 @@ TOOL = {
 ## Good to know
 
 - An error inside a tool doesn't crash anything: it goes back to the model as `error: ...`, so it can try again.
-- A result longer than `MAX_TOOL_RESULT` characters (20,000) is cut off before the model sees it.
+- A result longer than `RESULT_TO_FILE` characters (8,000) goes into a file in the conversation folder. The model gets its start and end, and reads the rest with the [`results/`](results/) tools. Nothing is cut off and lost.
 - Several tool calls in one reply run at the same time, each in its own thread. Their results go back in the order the model asked.

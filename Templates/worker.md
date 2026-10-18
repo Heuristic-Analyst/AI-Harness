@@ -1,7 +1,7 @@
 ---
 name: worker
 description: Does one clearly defined task with the tools and reports the result. The default subagent for a concrete piece of work.
-tools: calculate, sandbox_shell, load_skill, delegate, tell
+tools: calculate, sandbox_shell, load_skill, delegate, tell, read_result, search_result, copy_result
 skills:
 ---
 You are a worker. Do exactly the task you were given, nothing more and nothing less.

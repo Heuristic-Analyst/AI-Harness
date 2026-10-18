@@ -12,9 +12,9 @@ The whole thing is under three thousand lines of commented Python. It's meant to
 - **Projects.** The agent works in folders on your machine: `Shared/common/`, which every running instance shares, and one project folder `Shared/<project>/` that it mounts, which no other instance can mount at the same time.
 - **Skills.** Step-by-step instructions in Markdown that the agent loads only when it needs them, so the system prompt stays small. The agent can also write its own skills, in a folder of their own, and improve or delete them later. Yours it can never change.
 - **Memory.** A plain `MEMORY.md` file that the agent reads at the start of every conversation and edits itself.
-- **Persistent conversations.** Every conversation is saved as JSON and can be listed, reopened and renamed.
+- **Persistent conversations.** Every conversation has its own folder and can be listed, reopened and renamed. A log keeps every word, and only ever grows.
 - **Several at once.** You can run `main.py` more than once at the same time. Each instance has its own sandbox, and locks make sure two instances never work in the same conversation, project or notebook, or save the memory or a skill over each other.
-- **Automatic compaction.** When a conversation grows past a token limit, older tasks are summarized and the most recent ones are kept word for word.
+- **Checkpoints, not summaries.** When the context gets full, the agent writes down where it stands in a fixed structure, and goes on with a fresh context. Long tool results go into files the agent can read, search and copy into its sandbox. Nothing is ever lost.
 - **Jupyter notebooks.** The agent creates, edits and runs real `.ipynb` notebooks inside the sandbox. Variables stay alive between cells, like in Jupyter, and every change is saved to the file right away, so you can open it any time.
 - **Two modes.** In `ask` mode the agent may ask you questions. In `auto` mode it makes reasonable assumptions and decides on its own.
 
@@ -51,7 +51,7 @@ python main.py
 ```
 
 ```
-model: deepseek/deepseek-flash | tools: 28 | skills: memory, notebook | templates: coder, worker | sandboxes: python, ubuntu
+model: deepseek/deepseek-flash | tools: 31 | skills: memory, notebook | templates: coder, worker | sandboxes: python, ubuntu
 conversation: 20261015-22-11-04   (/help for commands)
 
 > what is 17% of 2340?
@@ -110,6 +110,7 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 │   ├── basic/           #   calculate, load_skill
 │   ├── memory/          #   read_memory, write_memory
 │   ├── notebook/        #   nb_create, nb_open, nb_close, nb_add, nb_edit, nb_run, nb_remove, nb_show, nb_rerun
+│   ├── results/         #   read_result, search_result, copy_result
 │   ├── sandbox/         #   sandbox_shell, check_sandbox, open_sandbox, close_sandbox, check_projects, mount_project, unmount_project,
 │   │                    #   create_project, delete_project, rename_project
 │   ├── skills/          #   create_skill, edit_skill, delete_skill
@@ -122,8 +123,13 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 │   ├── <project>/       #   one project per sandbox, mounted by the agent: /workspace/<project>
 │   └── Notebooks_Engine/  # kernel.py + client.py: run the notebooks inside the sandbox (mounted read-only)
 ├── Locks/               # lock files of the running instances. created on first use, cleaned up by itself
-└── Conversations/       # saved conversations (.json), created on first use
-    └── agents/          # subagent transcripts (.md)
+└── Conversations/       # your conversations, one folder each, created on first use
+    └── <name>/
+        ├── state.json      # what the agent carries right now: what /open loads
+        ├── log.jsonl       # everything, word for word, only ever appended
+        ├── checkpoint.md   # the agent's own notes, from its last checkpoint
+        ├── results/        # tool results too long for the context: 000042-sandbox_shell.txt
+        └── agents/         # its subagents: one folder each, with the same inside, plus transcript.md
 ```
 
 ## Configuration
@@ -138,9 +144,13 @@ Everything lives in `config.py`. The settings you're most likely to change:
 | `PRINT_THINKING` | `False` | Show the model's thinking in the terminal. |
 | `PRINT_TOOLS` | `True` | Show tool calls and their results in the terminal. |
 | `PRINT_SUBAGENT_TALK` | `False` | Show the messages between the agent and its subagents (`delegate` and `tell`) in the terminal. They're always in the transcripts. |
-| `CONTEXT_LIMIT` | `100_000` | Token count at which old tasks are summarized. |
-| `KEEP_TASKS` | `2` | How many recent tasks stay word for word after summarizing. |
-| `MAX_TOOL_RESULT` | `20_000` | Longest tool result (characters) sent back to the model. |
+| `CONTEXT_LIMIT` | `100_000` | Tokens an agent may use at most. Keep it at or below the model's real limit. |
+| `CHECKPOINT_AT` | `0.60` | After a task, above this share of `CONTEXT_LIMIT`: checkpoint, then a fresh context. |
+| `EMERGENCY_AT` | `0.80` | In the middle of a task, above this share: older results become pointers, then an emergency checkpoint if needed. |
+| `KEEP_TASKS` | `1` | How many recent tasks stay word for word after a checkpoint. |
+| `RESULT_TO_FILE` | `8_000` | Tool results longer than this (characters) go into a file; the model gets a preview. |
+| `KEEP_RESULTS` | `3` | In an emergency, the newest tool results stay in the context as they are. |
+| `REPORT_LIMIT` | `6_000` | A subagent's report should stay below this many characters. |
 | `MAX_CHILDREN` | `5` | Live subagents one agent may have at once. |
 | `MAX_DEPTH` | `3` | How deep the agent tree may go. You talk to depth 1. |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `2g` / `2` | Resource limits for a running sandbox. |
@@ -154,15 +164,16 @@ The API key is read from `.env` only. It never touches your environment variable
 
 The main agent and every subagent are the same `Agent` class. Each one keeps its whole conversation in a single list of messages. On every turn it sends the list to the model, prints the reply, runs any tool calls (each in its own thread) and loops until the model answers without calling a tool.
 
-The system prompt is rebuilt from parts whenever one of them changes: the soul or template instructions, the subagent rules, the skills menu, the templates menu, the memory, the mode and the summary of earlier tasks.
+The system prompt is rebuilt from parts before each of your messages and whenever one of them changes: the soul or template instructions, the subagent rules, the skills menu, the templates menu, the memory, the mode and the agent's checkpoint. An unchanged rebuild gives exactly the same text, so the model's prompt cache stays valid.
 
 ### Subagents
 
 The main agent can call `delegate` with a template name or its own instructions. Each subagent:
 
 - starts with an empty context and knows only its instructions and the task it was given
-- writes a full transcript to `Conversations/agents/`, which you can watch live with `tail -f`
-- ends its work with a report that starts with `DONE`, `BLOCKED` or `QUESTION`
+- has its own folder inside its parent's (`agents/<when>-<id>/`): a log, its result files, and `transcript.md`, which you can watch live with `tail -f`
+- ends its work with a report that starts with `DONE`, `BLOCKED` or `QUESTION`, stays under `REPORT_LIMIT` characters, points to files for the details, and says where every claim comes from
+- reaches its parent with its id and folder in front, so the parent can read the subagent's result files. Never the other way round
 - is closed when its parent's task ends, unless it's waiting for an answer to a `QUESTION`
 
 Subagents never get the main-only tools (`read_memory`, `write_memory`, `open_sandbox`, `close_sandbox`, `check_sandbox`, `check_projects`, `mount_project`, `unmount_project`, `create_project`, `delete_project`, `rename_project`, `create_skill`, `edit_skill`, `delete_skill`). They work in their parent's sandbox. Agents at the maximum depth don't get `delegate` or `tell`.
@@ -224,9 +235,27 @@ Every `main.py` you start is an instance with an id of its own (its process numb
 
 A lock is a file in `Locks/` that the instance keeps open, with a lock from the operating system on it. The operating system takes that lock away by itself when the instance ends, however it ends: `/exit`, a crash, a closed terminal, a killed process, a power cut. So a lock is never left behind. Each instance deletes its own lock files when it gives a lock back, and all of them when it exits; it never touches another instance's files. After a crash its files stay, without the lock, so every start deletes the files nobody holds. Files that running instances hold are never touched.
 
-### Compaction
+### Conversation folders and the log
 
-Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT`, everything except the last `KEEP_TASKS` tasks is summarized by a separate request, and the summary moves into the system prompt.
+Every conversation is a folder, `Conversations/<name>/` (see the layout above). Two files in it matter most:
+
+- **`log.jsonl`** keeps everything, one line each: every message, every tool call and result, the system prompt whenever its text changed, mode changes, checkpoints, and when the context was cleared. It is only ever appended to, never rewritten, so nothing that happened is ever lost.
+- **`state.json`** is what the agent carries right now, rewritten after every message. `/open` loads it, together with `checkpoint.md`.
+
+Conversations saved the old way, as `Conversations/<name>.json`, still show up in `/list`. The first `/open` turns one into a folder: its messages go into `state.json`, its summary into `checkpoint.md`, and the old file is kept there as `old.json`.
+
+### Long tool results
+
+A tool result longer than `RESULT_TO_FILE` characters goes into the agent's `results/` folder as `000042-sandbox_shell.txt`. The agent gets a preview: where the file is, how big, the first 40 and the last 20 lines. With `read_result` it reads any range of lines, with `search_result` it finds lines like `grep`, and with `copy_result` it copies the file into `common/` (or the mounted project) to work on it with code in the sandbox. A file bigger than the whole context is no problem: the agent only ever loads the slice it needs.
+
+### Checkpoints
+
+Nothing is summarized. When the context gets full, the agent writes its **checkpoint** itself, while it still knows everything, in fixed sections: goal, decisions, facts (each with its source), done, open (with the next step), files, questions. It replaces `checkpoint.md`; every earlier one is still in the log.
+
+- **After a task**, above `CHECKPOINT_AT` (60%): the agent writes its checkpoint, and its context is cleared down to the system prompt, which holds the checkpoint, and the last `KEEP_TASKS` tasks. If those are big themselves, only each task's question and final answer are kept.
+- **In the middle of a task**, above `EMERGENCY_AT` (80%): first, every tool result except the newest `KEEP_RESULTS` becomes a short pointer to its file. That usually frees most of the room, and nothing is lost. Only if that isn't enough does the agent write an emergency checkpoint, saying exactly where it is in the task. Its context is cleared, and it goes on with the same task from there.
+
+Subagents only use the emergency path: their whole life is one task.
 
 ## Built-in tools
 
@@ -252,6 +281,8 @@ Before each model call the conversation's size is estimated. Past `CONTEXT_LIMIT
 | `nb_rerun` | main (subagents if given) | Fresh kernel, then every cell from the top. |
 | `create_skill` / `edit_skill` / `delete_skill` | main only | Write, rewrite or delete the agent's own skills in `Skills/Learned/`. |
 | `read_memory` | main only | Reads `MEMORY.md`. |
+| `read_result` / `search_result` | all | Reads a range of lines from a long tool result's file, or finds lines in them. Own files and the subagents' only. |
+| `copy_result` | all | Copies a result file into `common/` or the mounted project, any subfolder, to work on it in the sandbox. |
 | `write_memory` | main only | Replaces `MEMORY.md`. |
 
 ## Extending it
