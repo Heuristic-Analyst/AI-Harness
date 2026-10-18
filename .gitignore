@@ -5,9 +5,7 @@ Conversations/
 # python's cache files
 __pycache__/
 
-# Shared/ is where the agent's work lands. keep only the notebook engine, it is part of the project.
-# (git can't bring a file back from an ignored folder, so each level is opened up one by one)
+# Shared/ is where the agent's work lands: common/ and the project folders. keep only the notebook engine, it is part of the project.
+# (git can't bring a file back from an ignored folder, so it is opened up again)
 Shared/*
-!Shared/Notebooks/
-Shared/Notebooks/*
-!Shared/Notebooks/Engine/
+!Shared/Notebooks_Engine/
