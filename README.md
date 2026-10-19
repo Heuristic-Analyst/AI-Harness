@@ -2,7 +2,7 @@
 
 A small, readable multi-agent assistant that runs in your terminal. It talks to any LLM through [LiteLLM](https://github.com/BerriAI/litellm), can split work across subagents that run in parallel, remembers things between conversations, and runs code only inside throwaway [Podman](https://podman.io) containers, never on your machine.
 
-The whole thing is a few thousand lines of commented Python. It's meant to be read, changed and extended.
+The whole thing is under three thousand lines of commented Python. It's meant to be read, changed and extended.
 
 ## Features
 
@@ -15,7 +15,6 @@ The whole thing is a few thousand lines of commented Python. It's meant to be re
 - **Persistent conversations.** Every conversation has its own folder and can be listed, reopened and renamed. A log keeps every word, and only ever grows.
 - **Several at once.** You can run `main.py` more than once at the same time. Each instance has its own sandbox, and locks make sure two instances never work in the same conversation, project or notebook, or save the memory or a skill over each other.
 - **Checkpoints, not summaries.** When the context gets full, the agent writes down where it stands in a fixed structure, and goes on with a fresh context. Long tool results go into files the agent can read, search and copy into its sandbox. Nothing is ever lost.
-- **Project runs.** A long project (hours, days, any size) runs in the background as a graph of nodes: each node is one task with checkable done-when points and a token budget, and splits into children when it is too big. A scheduler without a model starts the shifts, parents check their children's results, and everything lives in files, so a run survives closing the chat and even a crash. You can answer its questions, ask for changes, pause it or give it more budget at any time.
 - **Jupyter notebooks.** The agent creates, edits and runs real `.ipynb` notebooks inside the sandbox. Variables stay alive between cells, like in Jupyter, and every change is saved to the file right away, so you can open it any time.
 - **Two modes.** In `ask` mode the agent may ask you questions. In `auto` mode it makes reasonable assumptions and decides on its own.
 
@@ -103,7 +102,6 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 ├── Skills/              # one folder per skill. these are yours: the agent can't change them
 │   ├── memory/SKILL.md
 │   ├── notebook/SKILL.md
-│   ├── project-run/SKILL.md   # how the main agent sets up, starts and follows a project run
 │   └── Learned/         # skills the agent wrote itself: the only ones it may create, edit and delete (README.md explains)
 ├── Templates/
 │   ├── coder.md         # ready-made subagents: instructions, tools, skills
@@ -113,11 +111,6 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 │   ├── memory/          #   read_memory, write_memory
 │   ├── notebook/        #   nb_create, nb_open, nb_close, nb_add, nb_edit, nb_run, nb_remove, nb_show, nb_rerun
 │   ├── results/         #   read_result, search_result, copy_result
-│   ├── projects/        #   project runs: start_run, run_status, message_run, pause_run, and their helpers:
-│   │   ├── _graph.py    #     the graph of nodes in Shared/<project>/.graph/, and its rules
-│   │   ├── _scheduler.py  #   the scheduler, started in the background by start_run
-│   │   └── _nodes/      #     the nodes' own tools: create_nodes, write_result, check_result, cancel_node, send_message,
-│   │                    #     add_fact, search_facts, node_status. only the scheduler loads them
 │   ├── sandbox/         #   sandbox_shell, check_sandbox, open_sandbox, close_sandbox, check_projects, mount_project, unmount_project,
 │   │                    #   create_project, delete_project, rename_project
 │   ├── skills/          #   create_skill, edit_skill, delete_skill
@@ -128,7 +121,6 @@ Opening and closing a sandbox is the agent's job, and every exit closes it. A ne
 ├── Shared/              # the only folder a sandbox sees parts of
 │   ├── common/          #   every sandbox of every instance: /workspace/common. created on first use
 │   ├── <project>/       #   one project per sandbox, mounted by the agent: /workspace/<project>
-│   │   └── .graph/      #   only in a project run: its plan and state (see Project runs). read-only in the sandbox
 │   └── Notebooks_Engine/  # kernel.py + client.py: run the notebooks inside the sandbox (mounted read-only)
 ├── Locks/               # lock files of the running instances. created on first use, cleaned up by itself
 └── Conversations/       # your conversations, one folder each, created on first use
@@ -161,11 +153,6 @@ Everything lives in `config.py`. The settings you're most likely to change:
 | `REPORT_LIMIT` | `8_000` | A subagent's report should stay below this many characters. |
 | `MAX_CHILDREN` | `5` | Live subagents one agent may have at once. |
 | `MAX_DEPTH` | `3` | How deep the agent tree may go. You talk to depth 1. |
-| `RUN_PARALLEL` | `3` | Project runs: shifts that run at the same time. |
-| `NODE_CHILDREN` / `NODE_DEPTH` | `5` / `8` | Project runs: children one node may have, and how deep the graph may go. |
-| `NODE_MIN_BUDGET` | `20_000` | Project runs: the smallest budget a node may get. |
-| `BUDGET_WARNING` / `BUDGET_RESERVE` | `0.80` / `0.10` | Project runs: a node is warned at 80% of its budget; 10% is kept back for its wrap-up. |
-| `IDLE_SHIFTS` | `2` | Project runs: shifts in a row without progress before a node is blocked. |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` | `2g` / `2` | Resource limits for a running sandbox. |
 | `MAX_TOOL_TIMEOUT` | `600` | Seconds a sandbox command may run before it is stopped. |
 
@@ -205,7 +192,6 @@ A running sandbox:
   - `Shared/common/` at `/workspace/common`: always there, in every instance, so instances can share files. It can't be unmounted.
   - `Shared/<project>/` at `/workspace/<project>`: one project folder at most, mounted by the agent (`mount_project`). While one instance has it, no other instance can mount it. The agent can also create, rename and delete project folders, but never one that a sandbox has mounted.
   - `Shared/Notebooks_Engine/` at `/workspace/Notebooks_Engine`, read-only: the notebook engine. It can't be changed from inside.
-  - `Shared/<project>/.graph/`, read-only, only if the project has a project run: its plan and state, for the work to read.
 
 `common` and `Notebooks_Engine` are never treated as projects: no tool creates, mounts, renames or deletes them.
 
@@ -271,39 +257,6 @@ Nothing is summarized. When the context gets full, the agent writes its **checkp
 
 Subagents only use the emergency path: their whole life is one task.
 
-### Project runs
-
-For work far bigger than one context or one evening: a website, a data pipeline, a long research. You agree with the agent on the project folder, the goal, **done when** (3 to 6 points someone can check), a token budget and the sandbox, and optionally the first level of the plan. The `project-run` skill tells the agent how. Then `start_run` starts the scheduler (`tools/projects/_scheduler.py`) in the background, and you can close the chat.
-
-The run is a graph of **nodes** in `Shared/<project>/.graph/`. The root `T1` is the whole goal; its children are `T1.1`, `T1.2`, ...; theirs `T1.1.1`, and so on. Each node has a goal, why it matters, its done-when points, a budget (for itself and everything it gives its children), and `depends_on`: siblings whose results it needs first.
-
-```
-.graph/
-├── project.json        # goal, done when, budget, sandbox
-├── nodes/T1.2.json     # what a node is: goal, why, done_when, budget, depends_on. written once
-├── state/T1.2.json     # where it stands: status, spent, given to children, accepted, ...
-├── inbox/T1.2/         # messages to it, one numbered file each (inbox/user/: the root's questions to you)
-├── knowledge/facts.jsonl  # facts any node found, with their source
-├── work/T1/            # the root's folder: checkpoint.md, result.md, transcript.md, log.jsonl, results/
-│   └── agents/T1.2/    #   a child's folder, inside its parent's
-├── run.log             # what the scheduler did, one line each
-└── pause               # only while paused
-```
-
-The **scheduler** has no model. Round after round it follows the rules in `tools/projects/_graph.py`: an open node whose dependencies are done gets a **shift**, up to `RUN_PARALLEL` at once. A shift is a fresh agent for that node, a subagent with the node rules and the node tools: its briefing (goal, budget, its dependencies' results, its children and their results, new messages) is its first message, and its checkpoint is in its system prompt. In a shift a node does what fits:
-
-- **does the work** itself, in the project folder, if it fits its budget
-- **splits** with `create_nodes`, if it is too big: then it ends its shift and waits
-- **checks** its children's results against their done-when points, when it is woken: `check_result` accepts one or sends it back with exactly what is missing (and more budget, if needed). Siblings that build on a sent-back result become **stale** and are checked again
-- **finishes** with `write_result`: a report that starts with `DONE` or `BLOCKED`, one answer per done-when point, and its final checkpoint. A `DONE` needs every child accepted or cancelled
-- **asks** its parent with `send_message`, only when it can't go on with a reasonable assumption. The root's parent is you
-
-A waiting node is woken when a message comes, or when none of its children can go on without it. The run ends when the root is done or blocked, when it waits for your answer, or when you paused it. `run_status` shows where it stands; `message_run` passes on your answer or a change ("also read credit card statements"), and starts the scheduler again: the root decides how, reopening finished parts, adding or cancelling nodes.
-
-The **budget** is checked between model calls. At `BUDGET_WARNING` (80%) the node is told; when it is used up, the shift stops, and with the `BUDGET_RESERVE` kept back for this, the node writes its checkpoint and a `BLOCKED: out of budget` report saying what is done and what it would need. If even that fails, the scheduler writes the report. A node that makes no progress for `IDLE_SHIFTS` shifts, or whose model fails three times in a row, is blocked too: its parent always gets an answer. A run that is out of budget goes on with `message_run` and `extra_budget`.
-
-Everything is in files, written by one tool each, so a crash loses at most the shift that was going on: a node that was working opens again and goes on from its checkpoint. The scheduler is an instance like `main.py`: its own sandbox, with the project mounted, so no one else can mount it while it runs. Inside the sandbox `.graph/` is read-only: only the node tools change it.
-
 ## Built-in tools
 
 | Tool | Who gets it | What it does |
@@ -331,14 +284,6 @@ Everything is in files, written by one tool each, so a crash loses at most the s
 | `read_result` / `search_result` | all | Reads a range of lines from a long tool result's file, or finds lines in them. Own files and the subagents' only. |
 | `copy_result` | all | Copies a result file into `common/` or the mounted project, any subfolder, to work on it in the sandbox. |
 | `write_memory` | main only | Replaces `MEMORY.md`. |
-| `start_run` | main only | Sets up a project run (goal, done when, budget, sandbox, optional plan) and starts its scheduler, or lets a paused one go on. |
-| `run_status` | main only | Where a run stands: the tree of nodes, the budget used, the root's questions and result, the last log lines. |
-| `message_run` | main only | Sends your answer or a change to the root, optionally with more budget, and starts the scheduler again. |
-| `pause_run` | main only | Pauses a run after the shifts going on now. |
-| `create_nodes` / `cancel_node` | nodes of a run only | Split a node into children, or drop one (optionally replaced by another). |
-| `write_result` / `check_result` | nodes of a run only | Finish a node with its report, checkpoint and done-when answers; accept a child's result or send it back. |
-| `send_message` | nodes of a run only | A message to the parent or to an own child. |
-| `add_fact` / `search_facts` / `node_status` | nodes of a run only | The run's shared facts, and the whole graph with the node's budget. |
 
 ## Extending it
 

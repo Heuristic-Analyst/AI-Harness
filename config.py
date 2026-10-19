@@ -39,20 +39,9 @@ MAX_DEPTH = 3                          # you talk to depth 1. it may create dept
 MAIN_ONLY_TOOLS = ["read_memory", "write_memory", "open_sandbox", "close_sandbox", "check_sandbox",   # subagents never get these,
                    "check_projects", "mount_project", "unmount_project",                               # whatever a template says.
                    "create_project", "delete_project", "rename_project",                               # they work in their
-                   "start_run", "run_status", "message_run", "pause_run",                              # parent's sandbox
-                   "create_skill", "edit_skill", "delete_skill"]
+                   "create_skill", "edit_skill", "delete_skill"]                                       # parent's sandbox
 DEFAULT_SUBAGENT_TOOLS = ["calculate", "load_skill", "sandbox_shell", "delegate", "tell",       # for a subagent made
                           "read_result", "search_result", "copy_result"]                       # without a template
-
-# Project runs (see tools/projects/): a long project as a graph of nodes, worked on in shifts by a scheduler
-RUN_PARALLEL = 3                       # shifts that run at the same time in one project run. they share one sandbox
-NODE_CHILDREN = 5                      # children one node may have (cancelled and replaced ones don't count)
-NODE_DEPTH = 8                         # levels below the root at most: T1.2.3.1... a safety net, a good split rarely needs it
-NODE_MIN_BUDGET = 20_000               # the smallest budget a node can get, in tokens
-BUDGET_WARNING = 0.80                  # a node has used this share of its budget? it is told to finish or split
-BUDGET_RESERVE = 0.10                  # this share of a node's budget is kept back for its wrap-up: checkpoint + report
-IDLE_SHIFTS = 2                        # shifts in a row without progress (no result, no split, no message): then the node
-                                       # is reported BLOCKED, so its parent decides
 
 # Sandbox (see sandbox.py)
 CONTAINER_CMD = "podman"               # the container program. podman is rootless: "root" inside is just you outside

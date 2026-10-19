@@ -23,7 +23,6 @@ The agent's only way to run commands: inside a Podman container, never on your m
   - `Shared/common/` at `/workspace/common`: always, in every instance. That's where instances share files. It can't be unmounted.
   - `Shared/<project>/` at `/workspace/<project>`: one project at most, mounted by the agent. While one instance has it, no other can mount it.
   - `Shared/Notebooks_Engine/` at `/workspace/Notebooks_Engine`, read-only: the notebook engine.
-  - `Shared/<project>/.graph/`, read-only, if the project has one: the plan and state of a project run. Only the node tools change it, from outside.
 - Nothing else of your machine, not even the rest of `Shared/`. `common` and `Notebooks_Engine` are not projects: no project tool creates, mounts, renames or deletes them.
 - All of them are mounted `noexec`, so scripts there run through an interpreter (`python x.py`, `bash x.sh`).
 - Podman can't add or remove a folder of a running container, so `mount_project` and `unmount_project` restart the sandbox. Opening a sandbox with the project right away avoids that.
